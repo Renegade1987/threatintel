@@ -230,6 +230,17 @@ def mitre(wanted, aidx):
             out[w.lower()] = res
     return out
 
+def world():
+    d = json.loads(get("https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json", timeout=60))
+    out = []
+    for f in d["features"]:
+        g = f.get("geometry") or {}
+        t, c = g.get("type"), g.get("coordinates")
+        polys = c if t == "MultiPolygon" else [c] if t == "Polygon" else []
+        out.append({"id": f.get("id"), "n": (f.get("properties") or {}).get("name", ""),
+                    "p": [[[round(p[0], 1), round(p[1], 1)] for p in poly[0]] for poly in polys if poly]})
+    return out
+
 old = {}
 if os.path.exists(OUT):
     try:
@@ -295,6 +306,11 @@ wanted = {g["name"] for g in (data.get("groups") or {}).values()}
 for key in ("it_victims", "world_victims"):
     wanted |= {v["group"] for v in data.get(key, []) if v.get("group")}
 run("mitre", "MITRE ATT&CK", lambda: mitre(wanted, aidx), {})
+
+if old.get("world"):
+    data["world"] = old["world"]
+else:
+    run("world", "Mappa mondo", world, [])
 
 data["generated"] = now
 data["status"] = status
