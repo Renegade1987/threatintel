@@ -30,6 +30,8 @@ section{display:none}section.on{display:block}h3{margin:0 0 10px;color:var(--m);
 .kv{display:grid;grid-template-columns:140px 1fr;gap:6px 10px}.kv div:nth-child(odd){color:var(--m)}
 .warn{background:#3a2a10;border:1px solid #6b4a14;border-radius:6px;padding:8px 10px;font-size:12px;margin-top:14px;color:#e8c27a}
 .mini{padding:6px 0;border-bottom:1px solid var(--l)}
+  .tac{margin:10px 0 2px;font-size:12px;color:var(--o);text-transform:uppercase;font-weight:600}
+.big{display:inline-block;background:var(--a);color:#fff!important;padding:9px 14px;border-radius:6px;font-weight:600;margin:10px 0}
 </style></head><body>
 <header><h1>🛡 ThreatIntel Hub</h1>
 <input id="q" placeholder="Ricerca globale: CVE, IP, azienda, gang, malware, notizie...">
@@ -69,6 +71,19 @@ const topN=(arr,k)=>{const m={};arr.forEach(x=>{if(x)m[x]=(m[x]||0)+1});return O
 function openM(html){$("#mbox").innerHTML='<button id="mclose">×</button>'+html;$("#modal").classList.add("show");$("#modal").scrollTop=0}
 function closeM(){$("#modal").classList.remove("show")}
 function showGroup(name){
+  conconst TAC=["reconnaissance","resource-development","initial-access","execution","persistence","privilege-escalation","defense-evasion","credential-access","discovery","lateral-movement","collection","command-and-control","exfiltration","impact"];
+function mitreHtml(key){
+  const list=(D.mitre||{})[key];
+  if(!list||!list.length)return "<i>Nessuna corrispondenza MITRE ATT&CK per questo gruppo (non è censito nel dataset ufficiale o è noto con un altro nome).</i>";
+  return list.map(m=>{
+    const by={};
+    m.techniques.forEach(t=>(t.tactics.length?t.tactics:["altro"]).forEach(x=>(by[x]=by[x]||[]).push(t)));
+    const order=[...TAC.filter(x=>by[x]),...Object.keys(by).filter(x=>!TAC.includes(x))];
+    return `<div style="margin-bottom:14px"><b>${esc(m.name)}</b> <span class="tag">${esc(m.type)}</span> ${safeUrl(m.url)?`<a href="${safeUrl(m.url)}" target="_blank" rel="noopener noreferrer">${esc(m.id)} ↗</a>`:""}
+    <small style="color:var(--m)"> · ${m.techniques.length} tecniche</small>
+    ${order.map(tc=>`<div class="tac">${esc(tc)}</div>${by[tc].map(t=>`<a class="tag" title="${esc(t.name)}" href="${safeUrl(t.url)||"#"}" target="_blank" rel="noopener noreferrer">${esc(t.id)} ${esc(t.name)}</a>`).join("")}`).join("")}</div>`}).join("");
+}
+function showGroup(name){
   const key=name.toLowerCase(),info=G()[key]||{};
   const vi=D.it_victims.filter(v=>(v.group||"").toLowerCase()===key);
   const vw=D.world_victims.filter(v=>(v.group||"").toLowerCase()===key);
@@ -76,18 +91,21 @@ function showGroup(name){
   const last=all.map(v=>v.date).sort().pop();
   const sec=topN(all.map(v=>v.sector),6),cou=topN(vw.map(v=>v.country),6);
   const news=relNews(name);
-  openM(`<h2>${esc(info.name||name)}</h2><small style="color:var(--m)">Threat actor / gruppo ransomware</small>
-  <h4>Profilo</h4><p>${esc(info.desc)||"<i>Nessuna descrizione disponibile dalla fonte.</i>"}</p>
-  <div class="kv"><div>Vittime in Italia</div><div><b>${vi.length}</b> (nei dati caricati)</div>
+  const extra=Object.entries(info.extra||{});
+  openM(`<h2>${esc(info.name||name)}</h2><small style="color:var(--m)">Scheda gruppo · dati ransomware.live + MITRE ATT&CK</small><br>
+  <a class="big" href="https://www.ransomware.live/group/${encodeURIComponent(name)}" target="_blank" rel="noopener noreferrer">Apri la scheda ufficiale su ransomware.live ↗</a>
+  <h4>Profilo (ransomware.live)</h4><p>${esc(info.desc)||"<i>Nessuna descrizione disponibile dalla fonte.</i>"}</p>
+  <div class="kv"><div>Leak site noti</div><div>${info.sites??"n/d"}</div>
+  ${extra.map(([k,v])=>`<div>${esc(k)}</div><div>${esc(v)}</div>`).join("")}
+  <div>Vittime in Italia</div><div><b>${vi.length}</b> (nei dati caricati)</div>
   <div>Vittime recenti mondo</div><div>${vw.length}</div>
   <div>Ultimo avvistamento</div><div>${last?fd(last):"n/d"}</div>
-  <div>Leak site noti</div><div>${info.sites??"n/d"}</div>
   <div>Settori colpiti</div><div>${sec.map(s=>`<span class="tag">${esc(s[0])} · ${s[1]}</span>`).join("")||"n/d"}</div>
   <div>Paesi (recenti)</div><div>${cou.map(s=>`<span class="tag">${esc(s[0])} · ${s[1]}</span>`).join("")||"n/d"}</div></div>
+  ${(info.profile||[]).length?`<h4>Riferimenti</h4>${info.profile.map(p=>`<div><a href="${safeUrl(p)}" target="_blank" rel="noopener noreferrer">${esc(p.slice(0,80))} ↗</a></div>`).join("")}`:""}
+  <h4>Tattiche, tecniche e procedure (MITRE ATT&CK)</h4>${mitreHtml(key)}
   <h4>Ultime vittime italiane</h4>${vi.slice(0,10).map(v=>`<div class="mini"><a class="lnk" data-v="${v.id}">${esc(v.victim)}</a> <small style="color:var(--m)">· ${esc(v.sector)} · ${fd(v.date)}</small></div>`).join("")||"<i>Nessuna nei dati attuali</i>"}
-  <h4>Notizie correlate</h4>${newsList(news)}
-  <h4>Approfondimenti</h4><div><a href="https://www.ransomware.live/group/${encodeURIComponent(name)}" target="_blank" rel="noopener noreferrer">Scheda su ransomware.live ↗</a>
-  ${(info.profile||[]).map(p=>` · <a href="${safeUrl(p)}" target="_blank" rel="noopener noreferrer">Riferimento ↗</a>`).join("")}</div>`);
+  <h4>Notizie correlate</h4>${newsList(news)}`);
 }
 function showVictim(id){
   const v=allV().find(x=>x.id===id);if(!v)return;
