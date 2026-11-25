@@ -7,6 +7,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: update-feeds
+  cancel-in-progress: false
+
 jobs:
   update:
     runs-on: ubuntu-latest
@@ -16,7 +20,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: python fetch_feeds.py
-     - name: Commit data.json
+      - name: Commit data.json
         run: |
           git config user.name "feed-bot"
           git config user.email "feed-bot@users.noreply.github.com"
@@ -25,6 +29,9 @@ jobs:
             echo "Nessuna modifica"
           else
             git commit -m "update feeds"
-            git pull --rebase origin main
-            git push origin HEAD:main
+            for i in 1 2 3; do
+              git pull --rebase -X theirs origin main && git push origin HEAD:main && exit 0
+              sleep 5
+            done
+            exit 1
           fi
