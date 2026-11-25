@@ -241,7 +241,7 @@ def run(key, label, fn, default):
         data[key] = old.get(key, default)
         prev = next((s for s in old.get("status", []) if s["feed"] == label), {})
         status.append({"feed": label, "ok": False, "count": len(data[key]),
-                       "updated": prev.get("updated", ""), "error": str(e)[:120]})
+                       "updated": prev.get("updated", ""), "error": str(e)[:400]})
 
 run("kev", "CISA KEV", kev, [])
 run("c2", "Feodo Tracker", feodo, [])
