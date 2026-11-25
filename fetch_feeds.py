@@ -1,4 +1,4 @@
-import json, os, re, html, gzip, urllib.request, xml.etree.ElementTree as ET
+import json, os, re, html, gzip, time, urllib.request, urllib.parse, urllib.error, xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 
@@ -241,6 +241,84 @@ def world():
                     "p": [[[round(p[0], 1), round(p[1], 1)] for p in poly[0]] for poly in polys if poly]})
     return out
 
+ITALY_URLS = ["https://raw.githubusercontent.com/openpolis/geojson-italy/master/geojson/limits_IT_regions.geojson"]
+
+def italy():
+    d, last = None, None
+    for u in ITALY_URLS:
+        try:
+            d = json.loads(get(u, timeout=90))
+            break
+        except Exception as e:
+            last = e
+    if d is None:
+        raise RuntimeError("confini regioni non scaricabili: " + str(last)[:100])
+    out = []
+    for f in d["features"]:
+        pr = f.get("properties") or {}
+        name = pr.get("reg_name") or pr.get("name") or ""
+        g = f.get("geometry") or {}
+        c, t = g.get("coordinates"), g.get("type")
+        polys = c if t == "MultiPolygon" else [c] if t == "Polygon" else []
+        rings = []
+        for poly in polys:
+            if not poly:
+                continue
+            ring = [[round(p[0], 2), round(p[1], 2)] for p in poly[0][::2]]
+            if len(ring) >= 4:
+                rings.append(ring)
+        out.append({"n": name, "p": rings})
+    return out
+
+GEO_UA = {"User-Agent": "ThreatIntelHub/1.0 (OSINT dashboard; https://github.com/Renegade1987/threatintel)",
+          "Accept-Language": "it"}
+STOP = {"srl", "spa", "snc", "sas", "the", "and", "group", "italia", "italy", "gruppo", "studio", "soc", "coop", "del", "della", "dei", "per"}
+BAD_CAT = {"place", "highway", "boundary", "waterway", "natural", "landuse", "railway"}
+MANUAL_HQ = {}
+
+def geocode(name):
+    toks = [t for t in re.findall(r"[a-z0-9]+", name.lower()) if len(t) >= 3 and t not in STOP]
+    if not toks:
+        return None
+    q = urllib.parse.urlencode({"q": name, "countrycodes": "it", "format": "jsonv2", "limit": 5, "addressdetails": 1})
+    req = urllib.request.Request("https://nominatim.openstreetmap.org/search?" + q, headers=GEO_UA)
+    with urllib.request.urlopen(req, timeout=20) as r:
+        res = json.loads(r.read())
+    for x in res:
+        if x.get("category") in BAD_CAT:
+            continue
+        if norm(toks[0]) not in norm(x.get("name") or ""):
+            continue
+        a = x.get("address") or {}
+        city = a.get("city") or a.get("town") or a.get("village") or a.get("municipality") or ""
+        return {"ok": True, "lat": round(float(x["lat"]), 4), "lon": round(float(x["lon"]), 4),
+                "city": city, "label": (x.get("display_name") or "")[:120], "conf": "stimata"}
+    return None
+
+def build_geo(vs, cache, budget=40):
+    geo, used = {}, 0
+    for v in vs:
+        nm = v.get("victim") or ""
+        k = norm(nm)
+        if not k or k in geo:
+            continue
+        if k in MANUAL_HQ:
+            c, la, lo = MANUAL_HQ[k]
+            geo[k] = {"ok": True, "lat": la, "lon": lo, "city": c, "label": "manuale", "conf": "manuale"}
+        elif k in cache:
+            geo[k] = cache[k]
+        elif used < budget:
+            used += 1
+            try:
+                geo[k] = geocode(nm) or {"ok": False}
+            except urllib.error.HTTPError as e:
+                if e.code in (429, 403):
+                    break
+            except Exception:
+                pass
+            time.sleep(1.1)
+    return geo
+
 old = {}
 if os.path.exists(OUT):
     try:
@@ -280,9 +358,17 @@ run("news_en", "Notizie EN", lambda: news_multi([
     (["https://feeds.feedburner.com/securityweek"], "SecurityWeek", "en"),
     (["https://therecord.media/feed"], "The Record", "en"),
     (["https://feeds.feedburner.com/TheHackersNews"], "The Hacker News", "en")]), [])
+run("bulletins", "Bollettini istituzionali", lambda: news_multi([
+    (["https://www.csirt.gov.it/csirt-sito/feed/csirt-rss-feed.xml",
+      "https://www.csirt.gov.it/it/feed/rss.xml",
+      "https://news.google.com/rss/search?q=%22CSIRT+Italia%22+OR+%22CSIRT%22+bollettino+alert&hl=it&gl=IT&ceid=IT:it"],
+     "CSIRT Italia", "it"),
+    (["https://www.acn.gov.it/rss",
+      "https://news.google.com/rss/search?q=%22Agenzia+per+la+Cybersecurity+Nazionale%22+OR+%22ACN%22+cybersecurity&hl=it&gl=IT&ceid=IT:it"],
+     "ACN", "it")]), [])
 run("galaxy", "MISP Galaxy", galaxy, {})
 
-for n in ("news_it", "news_en"):
+for n in ("news_it", "news_en", "bulletins"):
     data[n].sort(key=lambda x: x.get("date", ""), reverse=True)
 
 gal = data.get("galaxy") or {}
@@ -307,10 +393,17 @@ for key in ("it_victims", "world_victims"):
     wanted |= {v["group"] for v in data.get(key, []) if v.get("group")}
 run("mitre", "MITRE ATT&CK", lambda: mitre(wanted, aidx), {})
 
+run("geo", "Sedi vittime IT (OSM)", lambda: build_geo(data["it_victims"], old.get("geo") or {}), {})
+
 if old.get("world"):
     data["world"] = old["world"]
 else:
     run("world", "Mappa mondo", world, [])
+
+if old.get("italy"):
+    data["italy"] = old["italy"]
+else:
+    run("italy", "Regioni Italia", italy, [])
 
 data["generated"] = now
 data["status"] = status
