@@ -65,16 +65,71 @@ def victims(url, limit):
 def groups():
     d = json.loads(get("https://api.ransomware.live/v2/groups"))
     out = {}
+    known = {"name", "description", "profile", "locations"}
     for g in d:
         name = (g.get("name") or "").strip()
         if not name:
             continue
         prof = g.get("profile") or []
+        extra = {k: str(v)[:200] for k, v in g.items()
+                 if k not in known and isinstance(v, (str, int, float))
+                 and v not in ("", None)}
         out[name.lower()] = {
             "name": name,
             "desc": clean(g.get("description") or ""),
             "profile": [p for p in prof if isinstance(p, str) and p.startswith("http")][:5],
-            "sites": len(g.get("locations") or [])}
+            "sites": len(g.get("locations") or []),
+            "extra": extra}
+    return out
+    MITRE_URL = "https://raw.githubusercontent.com/mitre-attack/attack-stix-data/master/enterprise-attack/enterprise-attack.json"
+
+def norm(s):
+    return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+def mitre(wanted):
+    objs = json.loads(get(MITRE_URL, timeout=180))["objects"]
+    live = {o["id"]: o for o in objs
+            if not o.get("revoked") and not o.get("x_mitre_deprecated")}
+    patterns = {i: o for i, o in live.items() if o["type"] == "attack-pattern"}
+    index = {}
+    for o in live.values():
+        if o["type"] in ("intrusion-set", "malware", "tool"):
+            names = [o["name"]] + o.get("aliases", []) + o.get("x_mitre_aliases", [])
+            for n in names:
+                index.setdefault(norm(n), {})[o["id"]] = o
+    uses = {}
+    for r in live.values():
+        if r["type"] == "relationship" and r.get("relationship_type") == "uses" \
+           and r["target_ref"] in patterns:
+            uses.setdefault(r["source_ref"], set()).add(r["target_ref"])
+
+    def ext(o):
+        for e in o.get("external_references", []):
+            if e.get("source_name") == "mitre-attack":
+                return e.get("external_id", ""), e.get("url", "")
+        return "", ""
+
+    out = {}
+    for w in wanted:
+        k = norm(w)
+        if len(k) < 3:
+            continue
+        cands = index.get(k) or index.get(re.sub(r"\d+$", "", k)) or {}
+        res = []
+        for o in list(cands.values())[:3]:
+            tech = []
+            for pid in uses.get(o["id"], []):
+                p = patterns[pid]
+                tid, url = ext(p)
+                tech.append({"id": tid, "name": p["name"], "url": url,
+                             "tactics": [kc["phase_name"] for kc in p.get("kill_chain_phases", [])]})
+            tech.sort(key=lambda t: t["id"])
+            eid, eurl = ext(o)
+            res.append({"name": o["name"], "id": eid, "url": eurl,
+                        "type": "Gruppo" if o["type"] == "intrusion-set" else "Software",
+                        "techniques": tech})
+        if res:
+            out[w.lower()] = res
     return out
 SOURCES = {
     "kev": ("CISA KEV", kev),
@@ -111,7 +166,18 @@ for key, (label, fn) in SOURCES.items():
 
 for n in ("news_it", "news_en"):
     data[n].sort(key=lambda x: x["date"], reverse=True)
-
+try:
+    wanted = {g["name"] for g in (data.get("groups") or {}).values()}
+    for key in ("it_victims", "world_victims"):
+        wanted |= {v["group"] for v in data.get(key, []) if v.get("group")}
+    data["mitre"] = mitre(wanted)
+    status.append({"feed": "MITRE ATT&CK", "ok": True, "count": len(data["mitre"]),
+                   "updated": now, "error": ""})
+except Exception as e:
+    data["mitre"] = old.get("mitre", {})
+    prev = next((s for s in old.get("status", []) if s["feed"] == "MITRE ATT&CK"), {})
+    status.append({"feed": "MITRE ATT&CK", "ok": False, "count": len(data["mitre"]),
+                   "updated": prev.get("updated", ""), "error": str(e)[:120]})
 data["generated"] = now
 data["status"] = status
 json.dump(data, open(OUT, "w", encoding="utf-8"), ensure_ascii=False)
