@@ -1,3 +1,5 @@
+html
+
 <!DOCTYPE html>
 <html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -32,6 +34,14 @@ h3{margin:0 0 10px;color:var(--m);font-size:13px;text-transform:uppercase}
 .mini{padding:6px 0;border-bottom:1px solid var(--l)}
 .tac{margin:10px 0 2px;font-size:12px;color:var(--o);text-transform:uppercase;font-weight:600}
 .big{display:inline-block;background:var(--a);color:#fff!important;padding:9px 14px;border-radius:6px;font-weight:600;margin:10px 0}
+.mapc{position:relative;padding:0;overflow:hidden;background:radial-gradient(ellipse at center,#0f1a2b 0%,#070b12 80%);border-color:#1d3354}
+.mapc canvas{display:block}
+.mapt{position:absolute;top:10px;left:14px;font-size:12px;letter-spacing:2px;color:#6fb3ff;text-transform:uppercase;text-shadow:0 0 8px #2f81f7}
+.leg{position:absolute;top:10px;right:14px;font-size:11px;color:var(--m);text-align:right;line-height:1.7}
+.leg i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
+.tick{position:absolute;left:12px;bottom:10px;max-width:60%;font:11px Consolas,monospace;color:#9fc4ff;background:#05080dcc;border:1px solid #1d3354;border-radius:6px;padding:6px 9px;line-height:1.55}
+.tick b{color:#f0883e}
+.mapn{position:absolute;right:14px;bottom:8px;font-size:10px;color:#5d6b7f}
 </style></head><body>
 <header><h1>🛡 ThreatIntel Hub</h1>
 <input id="q" placeholder="Ricerca globale: CVE, IP, azienda, gang, malware, notizie...">
@@ -45,7 +55,7 @@ window.onerror=(m,s,l)=>{$("#upd").innerHTML='<span class="bad">Errore JS: '+Str
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const safeUrl=u=>/^https?:\/\//i.test(u||"")?esc(u):"";
 const fd=s=>{const d=new Date(s);return isNaN(d)?esc(s||""):d.toLocaleString("it-IT",{dateStyle:"short",timeStyle:"short"})};
-let D=null,tab="it";
+let D=null,tab="ov";
 const TABS=[["ov","Overview"],["it","🇮🇹 Landscape Italia"],["kev","Vulnerabilità KEV"],["c2","Botnet C2"],["news","Notizie"],["ioc","IOC"],["feeds","Feed"],["search","Ricerca"]];
 $("#nav").innerHTML=TABS.map(t=>`<button data-t="${t[0]}">${t[1]}</button>`).join("");
 $("#nav").onclick=e=>{if(e.target.dataset.t){tab=e.target.dataset.t;render()}};
@@ -61,7 +71,7 @@ async function load(){
     const r=await fetch("data.json?_="+Date.now(),{cache:"no-store"});
     if(!r.ok)throw new Error("HTTP "+r.status);
     D=await r.json();
-    ["it_victims","world_victims","kev","c2","news_it","news_en","status"].forEach(k=>{if(!Array.isArray(D[k]))D[k]=[]});
+    ["it_victims","world_victims","kev","c2","news_it","news_en","status","world"].forEach(k=>{if(!Array.isArray(D[k]))D[k]=[]});
     if(!D.mitre||typeof D.mitre!=="object")D.mitre={};
     D.it_victims.forEach((v,i)=>v.id="i"+i);D.world_victims.forEach((v,i)=>v.id="w"+i);
     $("#upd").textContent="Dati aggiornati: "+fd(D.generated);
@@ -72,6 +82,63 @@ function tbl(h,rows){return `<table><thead><tr>${h.map(x=>`<th>${x}</th>`).join(
 function newsList(a){return a.map(n=>`<div class="news"><a href="${safeUrl(n.link)||"#"}" target="_blank" rel="noopener noreferrer">${esc(n.title)}</a><br><small>${esc(n.source)} · ${fd(n.date)}</small><br><small>${esc(n.summary)}</small></div>`).join("")||"<i>Nessun dato</i>"}
 const relNews=(term)=>{const t=(term||"").toLowerCase();if(t.length<4)return[];return [...D.news_it,...D.news_en].filter(n=>((n.title||"")+" "+(n.summary||"")).toLowerCase().includes(t)).slice(0,6)};
 const topN=(arr,k)=>{const m={};arr.forEach(x=>{if(x)m[x]=(m[x]||0)+1});return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,k)};
+
+/* ---------- MAPPA ---------- */
+const I2={AF:"AFG",AL:"ALB",DZ:"DZA",AR:"ARG",AM:"ARM",AU:"AUS",AT:"AUT",AZ:"AZE",BD:"BGD",BY:"BLR",BE:"BEL",BO:"BOL",BA:"BIH",BR:"BRA",BG:"BGR",CA:"CAN",CL:"CHL",CN:"CHN",CO:"COL",HR:"HRV",CU:"CUB",CY:"CYP",CZ:"CZE",DK:"DNK",EC:"ECU",EG:"EGY",EE:"EST",FI:"FIN",FR:"FRA",GE:"GEO",DE:"DEU",GR:"GRC",HK:"HKG",HU:"HUN",IS:"ISL",IN:"IND",ID:"IDN",IR:"IRN",IQ:"IRQ",IE:"IRL",IL:"ISR",IT:"ITA",JP:"JPN",JO:"JOR",KZ:"KAZ",KE:"KEN",KR:"KOR",KW:"KWT",LV:"LVA",LB:"LBN",LT:"LTU",LU:"LUX",MY:"MYS",MX:"MEX",MD:"MDA",MA:"MAR",NL:"NLD",NZ:"NZL",NG:"NGA",NO:"NOR",PK:"PAK",PA:"PAN",PE:"PER",PH:"PHL",PL:"POL",PT:"PRT",QA:"QAT",RO:"ROU",RU:"RUS",SA:"SAU",RS:"SRB",SG:"SGP",SK:"SVK",SI:"SVN",ZA:"ZAF",ES:"ESP",LK:"LKA",SE:"SWE",CH:"CHE",TW:"TWN",TH:"THA",TN:"TUN",TR:"TUR",UA:"UKR",AE:"ARE",GB:"GBR",UK:"GBR",US:"USA",UY:"URY",VE:"VEN",VN:"VNM"};
+let raf=0;
+function stopMap(){cancelAnimationFrame(raf)}
+function startMap(){
+  stopMap();
+  const c=$("#map");if(!c)return;
+  const W=c.parentElement.clientWidth,H=Math.round(W*142/360),dpr=window.devicePixelRatio||1;
+  c.width=W*dpr;c.height=H*dpr;c.style.width=W+"px";c.style.height=H+"px";
+  const g=c.getContext("2d");g.scale(dpr,dpr);
+  const P=(lo,la)=>[(lo+180)/360*W,(84-la)/142*H];
+  const world=D.world||[];
+  if(!world.length){g.fillStyle="#8b98a9";g.font="13px sans-serif";g.fillText("Mappa non disponibile: esegui il workflow per scaricare i confini dei paesi.",20,H/2);return}
+  const land=document.createElement("canvas");land.width=W*dpr;land.height=H*dpr;
+  const lg=land.getContext("2d");lg.scale(dpr,dpr);
+  lg.fillStyle="#13243d";lg.strokeStyle="#2a4a7a";lg.lineWidth=.6;
+  const cent={};
+  world.forEach(f=>{
+    let best=null,ba=-1;
+    (f.p||[]).forEach(r=>{
+      lg.beginPath();r.forEach((pt,i)=>{const[x,y]=P(pt[0],pt[1]);i?lg.lineTo(x,y):lg.moveTo(x,y)});lg.closePath();lg.fill();lg.stroke();
+      const xs=r.map(p=>p[0]),ys=r.map(p=>p[1]),a=(Math.max(...xs)-Math.min(...xs))*(Math.max(...ys)-Math.min(...ys));
+      if(a>ba){ba=a;best=r}
+    });
+    if(best){const lo=best.reduce((s,p)=>s+p[0],0)/best.length,la=best.reduce((s,p)=>s+p[1],0)/best.length;
+      cent[f.id]=P(lo,la);if(f.n)cent["n:"+f.n.toLowerCase()]=cent[f.id]}
+  });
+  const loc=code=>{const k=String(code||"").trim();if(!k)return null;
+    if(k.length===2)return cent[I2[k.toUpperCase()]]||null;
+    if(k.length===3&&cent[k.toUpperCase()])return cent[k.toUpperCase()];
+    return cent["n:"+k.toLowerCase()]||null};
+  const vc={},cc={};let skip=0;
+  allV().forEach(v=>{const p=loc(v.country);if(!p){skip++;return}const k=p.join();vc[k]=vc[k]||{p,n:0};vc[k].n++});
+  D.c2.forEach(x=>{const p=loc(x.country);if(!p)return;const k=p.join();cc[k]=cc[k]||{p,n:0};cc[k].n++});
+  const itp=cent["ITA"],itn=D.it_victims.length;
+  const pts=[...Object.values(vc).map((o,i)=>({...o,col:"240,136,62",ph:(i*.37)%1})),
+             ...Object.values(cc).map((o,i)=>({...o,col:"248,81,73",ph:(i*.53)%1}))];
+  function frame(t){
+    g.clearRect(0,0,W,H);g.drawImage(land,0,0,W,H);
+    pts.forEach(o=>{
+      const maxR=10+Math.min(26,Math.sqrt(o.n)*6),k=((t/2200)+o.ph)%1;
+      g.beginPath();g.arc(o.p[0],o.p[1],2+Math.min(3,o.n/10),0,7);g.fillStyle=`rgb(${o.col})`;g.fill();
+      g.beginPath();g.arc(o.p[0],o.p[1],k*maxR,0,7);g.strokeStyle=`rgba(${o.col},${(1-k).toFixed(2)})`;g.lineWidth=1.5;g.stroke();
+    });
+    if(itp){
+      for(let j=0;j<2;j++){const k=((t/1800)+j*.5)%1;g.beginPath();g.arc(itp[0],itp[1],k*34,0,7);g.strokeStyle=`rgba(80,200,255,${(1-k).toFixed(2)})`;g.lineWidth=2;g.stroke()}
+      g.beginPath();g.arc(itp[0],itp[1],4,0,7);g.fillStyle="#50c8ff";g.shadowColor="#50c8ff";g.shadowBlur=12;g.fill();g.shadowBlur=0;
+      g.fillStyle="#bfe9ff";g.font="bold 11px sans-serif";g.fillText("ITALIA · "+itn,itp[0]+9,itp[1]-8);
+    }
+    raf=requestAnimationFrame(frame);
+  }
+  raf=requestAnimationFrame(frame);
+  const last=[...D.it_victims.slice(0,5),...D.world_victims.slice(0,4)];
+  $("#tick").innerHTML=last.map(v=>`<div><b>${esc(v.group)}</b> → ${esc((v.victim||"").slice(0,32))} <span style="color:#6b7f9c">(${esc(v.country)})</span></div>`).join("")||"Nessun evento";
+  $("#mapn").textContent=skip?`${skip} eventi senza coordinate paese non mostrati`:"";
+}
 
 /* ---------- MODALI ---------- */
 function openM(html){$("#mbox").innerHTML='<button id="mclose">×</button>'+html;$("#modal").classList.add("show");$("#modal").scrollTop=0}
@@ -143,7 +210,10 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape")closeM()});
 const V={
  ov(){const k=[["Vittime IT (leak site)",D.it_victims.length,"var(--r)"],["CVE sfruttate (KEV)",D.kev.length,"var(--o)"],["C2 attivi",D.c2.filter(x=>x.status==="online").length,"var(--a)"],["Notizie",D.news_it.length+D.news_en.length,"var(--g)"]];
   const top=topN(D.it_victims.map(v=>v.group),8);
-  return `<div class="kpis">${k.map(x=>`<div class="card kpi"><div class="v" style="color:${x[2]}">${x[1]}</div><div class="l">${x[0]}</div></div>`).join("")}</div>
+  return `<div class="card mapc"><canvas id="map"></canvas><div class="mapt">Global threat map · OSINT</div>
+  <div class="leg"><div><i style="background:#f0883e"></i>Vittime rivendicate (leak site)</div><div><i style="background:#f85149"></i>Server C2 (paese di hosting)</div><div><i style="background:#50c8ff"></i>Italia</div></div>
+  <div class="tick" id="tick"></div><div class="mapn" id="mapn"></div></div>
+  <div class="kpis">${k.map(x=>`<div class="card kpi"><div class="v" style="color:${x[2]}">${x[1]}</div><div class="l">${x[0]}</div></div>`).join("")}</div>
   <div class="card"><h3>Gang ransomware più attive contro l'Italia (clicca per il profilo)</h3>${top.map(t=>`<div>${gl(t[0])} <span class="tag">${t[1]}</span></div>`).join("")||"<i>Nessun dato</i>"}</div>
   <div class="card"><h3>Ultime notizie italiane</h3>${newsList(D.news_it.slice(0,6))}</div>`},
  it(){const gs=[...new Set(D.it_victims.map(v=>v.group))].sort();
@@ -176,14 +246,17 @@ const V={
 function dl(name,rows){const c=rows.map(r=>r.map(x=>'"'+String(x??"").replace(/"/g,'""')+'"').join(",")).join("\n");
   const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([c],{type:"text/csv"}));a.download=name;a.click()}
 function render(){
+  stopMap();
   document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("on",b.dataset.t===tab));
   if(!D){$("#main").innerHTML='<div class="card">Nessun dato disponibile.</div>';return}
   $("#main").innerHTML=V[tab]();
+  if(tab==="ov")startMap();
   if(tab==="it"){const draw=()=>{const g=$("#gf").value;
     $("#vt").innerHTML=tbl(["Vittima","Gang","Settore","Scoperta","Sito"],D.it_victims.filter(v=>!g||v.group===g).map(v=>vrow(v,[esc(v.victim),gl(v.group),esc(v.sector),fd(v.date),esc(v.site)])))};
     $("#gf").onchange=draw;draw();
     $("#csv").onclick=()=>dl("vittime_italia.csv",[["vittima","gang","settore","data","sito"],...D.it_victims.map(v=>[v.victim,v.group,v.sector,v.date,v.site])])}
   if(tab==="ioc")$("#icsv").onclick=()=>dl("ioc.csv",[["tipo","valore","contesto"],...D.c2.map(c=>["ip",c.ip+":"+c.port,c.malware]),...D.kev.map(v=>["cve",v.cve,v.vendor+" "+v.product])]);
 }
+window.addEventListener("resize",()=>{if(tab==="ov"&&D)startMap()});
 load();setInterval(load,60000);
 </script></body></html>
