@@ -1,4 +1,4 @@
-import json, os, re, html, urllib.request, xml.etree.ElementTree as ET
+import json, os, re, html, gzip, urllib.request, xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 
@@ -25,10 +25,17 @@ def norm(s):
     return re.sub(r"[^a-z0-9]", "", (s or "").lower())
 
 def rss(url, source, lang):
-    raw = get(url).lstrip(b"\xef\xbb\xbf \r\n\t")
-    if not raw.startswith(b"<"):
-        raise ValueError("risposta non XML: " + raw[:60].decode("utf-8", "replace"))
-    root = ET.fromstring(raw)
+    raw = get(url)
+    if raw[:2] == b"\x1f\x8b":
+        raw = gzip.decompress(raw)
+    raw = raw.lstrip(b"\xef\xbb\xbf \r\n\t")
+    try:
+        if not (raw.startswith(b"<?xml") or raw.startswith(b"<rss") or raw.startswith(b"<feed")):
+            raise ValueError("non XML")
+        root = ET.fromstring(raw)
+    except Exception:
+        head = re.sub(r"\s+", " ", raw[:90].decode("utf-8", "replace"))
+        raise ValueError("len=%d head=%s" % (len(raw), head))
     out = []
     for it in root.iter("item"):
         out.append({"title": clean(it.findtext("title")), "link": (it.findtext("link") or "").strip(),
@@ -55,7 +62,7 @@ def news_multi(items):
                 last = ""
                 break
             except Exception as e:
-                last = str(e)[:80]
+                last = str(e)[:100]
         if last:
             errors.append(source + ": " + last)
     if not out and errors:
