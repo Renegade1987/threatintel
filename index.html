@@ -1,5 +1,3 @@
-html
-
 <!DOCTYPE html>
 <html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -42,6 +40,13 @@ h3{margin:0 0 10px;color:var(--m);font-size:13px;text-transform:uppercase}
 .tick{position:absolute;left:12px;bottom:10px;max-width:60%;font:11px Consolas,monospace;color:#9fc4ff;background:#05080dcc;border:1px solid #1d3354;border-radius:6px;padding:6px 9px;line-height:1.55}
 .tick b{color:#f0883e}
 .mapn{position:absolute;right:14px;bottom:8px;font-size:10px;color:#5d6b7f}
+.mapb{position:absolute;top:34px;left:12px;display:none}
+.itp{position:absolute;top:38px;right:12px;width:240px;max-height:calc(100% - 70px);overflow:auto;background:#05080dee;border:1px solid #1d3354;border-radius:8px;padding:10px;font-size:12px;display:none}
+.itp .h{margin:10px 0 4px;color:#6fb3ff;text-transform:uppercase;font-size:10px;letter-spacing:1px}
+.itp .s{color:var(--m);font-size:11px}
+.itp .r{padding:3px 4px;cursor:pointer;border-radius:4px;display:flex;justify-content:space-between}
+.itp .r:hover{background:var(--p2)}
+.inp{flex:1;min-width:220px;background:var(--bg);color:var(--tx);border:1px solid var(--l);border-radius:6px;padding:8px 10px}
 </style></head><body>
 <header><h1>🛡 ThreatIntel Hub</h1>
 <input id="q" placeholder="Ricerca globale: CVE, IP, azienda, gang, malware, notizie...">
@@ -56,7 +61,7 @@ const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&
 const safeUrl=u=>/^https?:\/\//i.test(u||"")?esc(u):"";
 const fd=s=>{const d=new Date(s);return isNaN(d)?esc(s||""):d.toLocaleString("it-IT",{dateStyle:"short",timeStyle:"short"})};
 let D=null,tab="ov";
-const TABS=[["ov","Overview"],["it","🇮🇹 Landscape Italia"],["kev","Vulnerabilità KEV"],["c2","Botnet C2"],["news","Notizie"],["ioc","IOC"],["feeds","Feed"],["search","Ricerca"]];
+const TABS=[["ov","Overview"],["it","🇮🇹 Landscape Italia"],["kev","Vulnerabilità KEV"],["c2","Botnet C2"],["news","Notizie"],["ioc","IOC"],["bull","🏛 Bollettini istituzionali"],["feeds","Feed"],["search","Ricerca"]];
 $("#nav").innerHTML=TABS.map(t=>`<button data-t="${t[0]}">${t[1]}</button>`).join("");
 $("#nav").onclick=e=>{if(e.target.dataset.t){tab=e.target.dataset.t;render()}};
 $("#q").oninput=()=>{if($("#q").value.trim().length>1){tab="search"}render()};
@@ -65,18 +70,21 @@ const G=()=>(D&&D.groups&&!Array.isArray(D.groups))?D.groups:{};
 const allV=()=>[...D.it_victims,...D.world_victims];
 const gl=g=>g?`<a class="lnk" data-g="${esc(g)}">${esc(g)}</a>`:"";
 const vrow=(v,cols)=>`<tr data-v="${v.id}">${cols.map(c=>`<td>${c}</td>`).join("")}</tr>`;
+const nk=s=>(s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+const hq=v=>{const g=(D.geo||{})[nk(v.victim)];return g&&g.ok?(g.city||""):""};
 
 async function load(){
   try{
     const r=await fetch("data.json?_="+Date.now(),{cache:"no-store"});
     if(!r.ok)throw new Error("HTTP "+r.status);
     D=await r.json();
-    ["it_victims","world_victims","kev","c2","news_it","news_en","status","world"].forEach(k=>{if(!Array.isArray(D[k]))D[k]=[]});
+    ["it_victims","world_victims","kev","c2","news_it","news_en","bulletins","status","world","italy"].forEach(k=>{if(!Array.isArray(D[k]))D[k]=[]});
     if(!D.mitre||typeof D.mitre!=="object")D.mitre={};
+    if(!D.geo||Array.isArray(D.geo))D.geo={};
     D.it_victims.forEach((v,i)=>v.id="i"+i);D.world_victims.forEach((v,i)=>v.id="w"+i);
     $("#upd").textContent="Dati aggiornati: "+fd(D.generated);
   }catch(e){$("#upd").innerHTML='<span class="bad">data.json non raggiungibile ('+esc(e.message)+')</span>'}
-  if(!$("#modal").classList.contains("show"))render();
+  if(!$("#modal").classList.contains("show")&&tab!=="bull")render();
 }
 function tbl(h,rows){return `<table><thead><tr>${h.map(x=>`<th>${x}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table>`}
 function newsList(a){return a.map(n=>`<div class="news"><a href="${safeUrl(n.link)||"#"}" target="_blank" rel="noopener noreferrer">${esc(n.title)}</a><br><small>${esc(n.source)} · ${fd(n.date)}</small><br><small>${esc(n.summary)}</small></div>`).join("")||"<i>Nessun dato</i>"}
@@ -85,31 +93,39 @@ const topN=(arr,k)=>{const m={};arr.forEach(x=>{if(x)m[x]=(m[x]||0)+1});return O
 
 /* ---------- MAPPA ---------- */
 const I2={AF:"AFG",AL:"ALB",DZ:"DZA",AR:"ARG",AM:"ARM",AU:"AUS",AT:"AUT",AZ:"AZE",BD:"BGD",BY:"BLR",BE:"BEL",BO:"BOL",BA:"BIH",BR:"BRA",BG:"BGR",CA:"CAN",CL:"CHL",CN:"CHN",CO:"COL",HR:"HRV",CU:"CUB",CY:"CYP",CZ:"CZE",DK:"DNK",EC:"ECU",EG:"EGY",EE:"EST",FI:"FIN",FR:"FRA",GE:"GEO",DE:"DEU",GR:"GRC",HK:"HKG",HU:"HUN",IS:"ISL",IN:"IND",ID:"IDN",IR:"IRN",IQ:"IRQ",IE:"IRL",IL:"ISR",IT:"ITA",JP:"JPN",JO:"JOR",KZ:"KAZ",KE:"KEN",KR:"KOR",KW:"KWT",LV:"LVA",LB:"LBN",LT:"LTU",LU:"LUX",MY:"MYS",MX:"MEX",MD:"MDA",MA:"MAR",NL:"NLD",NZ:"NZL",NG:"NGA",NO:"NOR",PK:"PAK",PA:"PAN",PE:"PER",PH:"PHL",PL:"POL",PT:"PRT",QA:"QAT",RO:"ROU",RU:"RUS",SA:"SAU",RS:"SRB",SG:"SGP",SK:"SVK",SI:"SVN",ZA:"ZAF",ES:"ESP",LK:"LKA",SE:"SWE",CH:"CHE",TW:"TWN",TH:"THA",TN:"TUN",TR:"TUR",UA:"UKR",AE:"ARE",GB:"GBR",UK:"GBR",US:"USA",UY:"URY",VE:"VEN",VN:"VNM"};
-let raf=0;
+let raf=0,zoomIT=false;
 function stopMap(){cancelAnimationFrame(raf)}
+function pip(x,y,ring){let ins=false;for(let i=0,j=ring.length-1;i<ring.length;j=i++){const xi=ring[i][0],yi=ring[i][1],xj=ring[j][0],yj=ring[j][1];if((yi>y)!==(yj>y)&&x<(xj-xi)*(y-yi)/(yj-yi)+xi)ins=!ins}return ins}
+const inPoly=(x,y,polys)=>(polys||[]).some(r=>pip(x,y,r));
+function showPlace(title,list){
+  openM(`<h2>${esc(title)}</h2><small style="color:var(--m)">${list.length} eventi · sede stimata da OpenStreetMap</small>
+  <div style="margin-top:10px">${list.map(v=>`<div class="mini"><a class="lnk" data-v="${v.id}">${esc(v.victim)}</a> <small style="color:var(--m)">· ${esc(v.group)} · ${esc(v.sector)} · ${fd(v.date)}${hq(v)?" · "+esc(hq(v)):""}</small></div>`).join("")}</div>
+  <div class="warn">⚠ La sede è una stima ricavata da OpenStreetMap in base al nome dell'azienda: può essere una filiale o un omonimo, e non coincide necessariamente con la sede amministrativa. Le vittime sono rivendicazioni dei criminali, non verificate.</div>`);
+}
 function startMap(){
   stopMap();
   const c=$("#map");if(!c)return;
-  const W=c.parentElement.clientWidth,H=Math.round(W*142/360),dpr=window.devicePixelRatio||1;
+  const W=c.parentElement.clientWidth,H=Math.max(400,Math.round(W*142/360)),dpr=window.devicePixelRatio||1;
   c.width=W*dpr;c.height=H*dpr;c.style.width=W+"px";c.style.height=H+"px";
-  const g=c.getContext("2d");g.scale(dpr,dpr);
-  const P=(lo,la)=>[(lo+180)/360*W,(84-la)/142*H];
+  const g=c.getContext("2d");g.setTransform(dpr,0,0,dpr,0,0);
   const world=D.world||[];
   if(!world.length){g.fillStyle="#8b98a9";g.font="13px sans-serif";g.fillText("Mappa non disponibile: esegui il workflow per scaricare i confini dei paesi.",20,H/2);return}
-  const land=document.createElement("canvas");land.width=W*dpr;land.height=H*dpr;
-  const lg=land.getContext("2d");lg.scale(dpr,dpr);
-  lg.fillStyle="#13243d";lg.strokeStyle="#2a4a7a";lg.lineWidth=.6;
+  const wv={cx:0,cy:13,sx:W/360,sy:H/142},iv={cx:12.6,cy:41.6,sx:H/13*.75,sy:H/13};
+  let cur={...(zoomIT?iv:wv)},from=cur,to=cur,t0=-1e9;
+  const P=(lo,la)=>[(lo-cur.cx)*cur.sx+W/2,(cur.cy-la)*cur.sy+H/2];
+  const inv=(x,y)=>[(x-W/2)/cur.sx+cur.cx,cur.cy-(y-H/2)/cur.sy];
   const cent={};
   world.forEach(f=>{
     let best=null,ba=-1;
-    (f.p||[]).forEach(r=>{
-      lg.beginPath();r.forEach((pt,i)=>{const[x,y]=P(pt[0],pt[1]);i?lg.lineTo(x,y):lg.moveTo(x,y)});lg.closePath();lg.fill();lg.stroke();
-      const xs=r.map(p=>p[0]),ys=r.map(p=>p[1]),a=(Math.max(...xs)-Math.min(...xs))*(Math.max(...ys)-Math.min(...ys));
-      if(a>ba){ba=a;best=r}
-    });
+    (f.p||[]).forEach(r=>{const xs=r.map(p=>p[0]),ys=r.map(p=>p[1]),a=(Math.max(...xs)-Math.min(...xs))*(Math.max(...ys)-Math.min(...ys));if(a>ba){ba=a;best=r}});
     if(best){const lo=best.reduce((s,p)=>s+p[0],0)/best.length,la=best.reduce((s,p)=>s+p[1],0)/best.length;
-      cent[f.id]=P(lo,la);if(f.n)cent["n:"+f.n.toLowerCase()]=cent[f.id]}
+      cent[f.id]=[lo,la];if(f.n)cent["n:"+f.n.toLowerCase()]=[lo,la]}
   });
+  const ITA=(world.find(f=>f.id==="ITA")||{}).p||[];
+  const regs=(D.italy&&D.italy.length?D.italy:[{n:"Italia",p:ITA}]).map(r=>{
+    const big=(r.p||[]).reduce((m,x)=>x.length>m.length?x:m,[]);
+    const xs=big.map(p=>p[0]),ys=big.map(p=>p[1]);
+    return {n:r.n,p:r.p||[],cx:big.length?(Math.min(...xs)+Math.max(...xs))/2:0,cy:big.length?(Math.min(...ys)+Math.max(...ys))/2:0}});
   const loc=code=>{const k=String(code||"").trim();if(!k)return null;
     if(k.length===2)return cent[I2[k.toUpperCase()]]||null;
     if(k.length===3&&cent[k.toUpperCase()])return cent[k.toUpperCase()];
@@ -117,21 +133,79 @@ function startMap(){
   const vc={},cc={};let skip=0;
   allV().forEach(v=>{const p=loc(v.country);if(!p){skip++;return}const k=p.join();vc[k]=vc[k]||{p,n:0};vc[k].n++});
   D.c2.forEach(x=>{const p=loc(x.country);if(!p)return;const k=p.join();cc[k]=cc[k]||{p,n:0};cc[k].n++});
-  const itp=cent["ITA"],itn=D.it_victims.length;
+  const itn=D.it_victims.length;
   const pts=[...Object.values(vc).map((o,i)=>({...o,col:"240,136,62",ph:(i*.37)%1})),
              ...Object.values(cc).map((o,i)=>({...o,col:"248,81,73",ph:(i*.53)%1}))];
+
+  const cities={},reg={};let nogeo=0;
+  D.it_victims.forEach(v=>{
+    const gg=(D.geo||{})[nk(v.victim)];
+    if(!gg||!gg.ok){nogeo++;return}
+    const k=gg.lat.toFixed(2)+","+gg.lon.toFixed(2);
+    const o=cities[k]=cities[k]||{city:gg.city||"(sede)",lat:gg.lat,lon:gg.lon,list:[]};o.list.push(v);
+    const rn=(regs.find(r=>inPoly(gg.lon,gg.lat,r.p))||{}).n||"Fuori confine";
+    (reg[rn]=reg[rn]||[]).push(v);
+  });
+  const pan=$("#itp");
+  pan.innerHTML=`<b>Italia</b><div class="s">${itn} eventi · ${itn-nogeo} con sede stimata · ${nogeo} non localizzati</div>
+  <div class="h">Regioni</div>${Object.entries(reg).sort((a,b)=>b[1].length-a[1].length).map(([k,l])=>`<div class="r" data-r="${esc(k)}"><span>${esc(k)}</span><span class="tag">${l.length}</span></div>`).join("")||"<i>nessuna</i>"}
+  <div class="h">Città</div>${Object.entries(cities).sort((a,b)=>b[1].list.length-a[1].list.length).slice(0,25).map(([k,o])=>`<div class="r" data-c="${k}"><span>${esc(o.city)}</span><span class="tag">${o.list.length}</span></div>`).join("")||"<i>nessuna</i>"}
+  <div class="s" style="margin-top:8px">Sede stimata da OpenStreetMap in base al nome dell'azienda: può non coincidere con la sede amministrativa.</div>`;
+  pan.onclick=e=>{const r=e.target.closest("[data-r]"),ci=e.target.closest("[data-c]");
+    if(r)showPlace(r.dataset.r,reg[r.dataset.r]);else if(ci)showPlace(cities[ci.dataset.c].city,cities[ci.dataset.c].list)};
+  const upd=()=>{$("#itp").style.display=zoomIT?"block":"none";$("#mback").style.display=zoomIT?"block":"none";
+    $("#leg").style.display=zoomIT?"none":"block";$("#mapt").textContent=zoomIT?"Italia · sedi stimate delle vittime":"Global threat map · OSINT"};
+  function setZoom(z){zoomIT=z;from={...cur};to=z?iv:wv;t0=performance.now();upd()}
+  upd();
+  $("#mback").onclick=e=>{e.stopPropagation();setZoom(false)};
+
+  const hit=e=>{
+    const b=c.getBoundingClientRect(),x=e.clientX-b.left,y=e.clientY-b.top;
+    if(!zoomIT){const [ix,iy]=P(12.5,42.2);if(Math.hypot(x-ix,y-iy)<45)return{t:"z"};const [lo,la]=inv(x,y);return inPoly(lo,la,ITA)?{t:"z"}:null}
+    for(const o of Object.values(cities)){const [px,py]=P(o.lon,o.lat);if(Math.hypot(x-px,y-py)<10)return{t:"c",o}}
+    const [lo,la]=inv(x,y);const r=regs.find(r=>inPoly(lo,la,r.p));
+    return r&&reg[r.n]?{t:"r",n:r.n}:null};
+  c.onmousemove=e=>{c.style.cursor=hit(e)?"pointer":"default"};
+  c.onclick=e=>{const h=hit(e);if(!h)return;
+    if(h.t==="z")setZoom(true);else if(h.t==="c")showPlace(h.o.city,h.o.list);else showPlace(h.n,reg[h.n])};
+
+  const path=(r)=>{g.beginPath();r.forEach((pt,i)=>{const[x,y]=P(pt[0],pt[1]);i?g.lineTo(x,y):g.moveTo(x,y)});g.closePath()};
   function frame(t){
-    g.clearRect(0,0,W,H);g.drawImage(land,0,0,W,H);
-    pts.forEach(o=>{
-      const maxR=10+Math.min(26,Math.sqrt(o.n)*6),k=((t/2200)+o.ph)%1;
-      g.beginPath();g.arc(o.p[0],o.p[1],2+Math.min(3,o.n/10),0,7);g.fillStyle=`rgb(${o.col})`;g.fill();
-      g.beginPath();g.arc(o.p[0],o.p[1],k*maxR,0,7);g.strokeStyle=`rgba(${o.col},${(1-k).toFixed(2)})`;g.lineWidth=1.5;g.stroke();
-    });
-    if(itp){
-      for(let j=0;j<2;j++){const k=((t/1800)+j*.5)%1;g.beginPath();g.arc(itp[0],itp[1],k*34,0,7);g.strokeStyle=`rgba(80,200,255,${(1-k).toFixed(2)})`;g.lineWidth=2;g.stroke()}
-      g.beginPath();g.arc(itp[0],itp[1],4,0,7);g.fillStyle="#50c8ff";g.shadowColor="#50c8ff";g.shadowBlur=12;g.fill();g.shadowBlur=0;
-      g.fillStyle="#bfe9ff";g.font="bold 11px sans-serif";g.fillText("ITALIA · "+itn,itp[0]+9,itp[1]-8);
+    const k=Math.max(0,Math.min(1,(t-t0)/900)),e=k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2;
+    const L=(a,b)=>a+(b-a)*e,GL=(a,b)=>Math.exp(Math.log(a)+(Math.log(b)-Math.log(a))*e);
+    cur={cx:L(from.cx,to.cx),cy:L(from.cy,to.cy),sx:GL(from.sx,to.sx),sy:GL(from.sy,to.sy)};
+    const pr=Math.max(0,Math.min(1,Math.log(cur.sy/wv.sy)/Math.log(iv.sy/wv.sy)));
+    g.clearRect(0,0,W,H);g.globalAlpha=1;
+    g.fillStyle="#13243d";g.strokeStyle="#2a4a7a";g.lineWidth=.6;
+    world.forEach(f=>(f.p||[]).forEach(r=>{path(r);g.fill();g.stroke()}));
+    if(pr>0){
+      g.globalAlpha=pr;g.fillStyle="#1b4170";g.strokeStyle="#5b8fd0";g.lineWidth=1;
+      regs.forEach(r=>r.p.forEach(ring=>{path(ring);g.fill();g.stroke()}));
+      if(pr>.8){g.fillStyle="#9fc4ff";g.font="10px sans-serif";g.textAlign="center";
+        regs.forEach(r=>{if(!r.n)return;const [x,y]=P(r.cx,r.cy);g.fillText(r.n+(reg[r.n]?" · "+reg[r.n].length:""),x,y)});g.textAlign="left"}
     }
+    if(pr<1){
+      g.globalAlpha=1-pr;
+      pts.forEach(o=>{
+        const [x,y]=P(o.p[0],o.p[1]),maxR=10+Math.min(26,Math.sqrt(o.n)*6),kk=((t/2200)+o.ph)%1;
+        g.beginPath();g.arc(x,y,2+Math.min(3,o.n/10),0,7);g.fillStyle=`rgb(${o.col})`;g.fill();
+        g.beginPath();g.arc(x,y,kk*maxR,0,7);g.strokeStyle=`rgba(${o.col},${(1-kk).toFixed(2)})`;g.lineWidth=1.5;g.stroke();
+      });
+      const [ix,iy]=P(12.5,42.2);
+      for(let j=0;j<2;j++){const kk=((t/1800)+j*.5)%1;g.beginPath();g.arc(ix,iy,kk*34,0,7);g.strokeStyle=`rgba(80,200,255,${(1-kk).toFixed(2)})`;g.lineWidth=2;g.stroke()}
+      g.beginPath();g.arc(ix,iy,4,0,7);g.fillStyle="#50c8ff";g.shadowColor="#50c8ff";g.shadowBlur=12;g.fill();g.shadowBlur=0;
+      g.fillStyle="#bfe9ff";g.font="bold 11px sans-serif";g.fillText("ITALIA · "+itn+" (clicca)",ix+9,iy-8);
+    }
+    if(pr>0){
+      g.globalAlpha=pr;
+      Object.values(cities).forEach(o=>{
+        const [x,y]=P(o.lon,o.lat),n=o.list.length,rad=4+Math.min(8,Math.sqrt(n)*2),kk=((t/1600)+(o.lat*7)%1)%1;
+        g.beginPath();g.arc(x,y,rad,0,7);g.fillStyle="#f0883e";g.shadowColor="#f0883e";g.shadowBlur=10;g.fill();g.shadowBlur=0;
+        g.beginPath();g.arc(x,y,rad+kk*14,0,7);g.strokeStyle=`rgba(240,136,62,${(1-kk).toFixed(2)})`;g.lineWidth=1.5;g.stroke();
+        if(pr>.8){g.fillStyle="#fff";g.font="bold 11px sans-serif";g.fillText(o.city+" · "+n,x+rad+4,y+4)}
+      });
+    }
+    g.globalAlpha=1;
     raf=requestAnimationFrame(frame);
   }
   raf=requestAnimationFrame(frame);
@@ -189,6 +263,7 @@ function showVictim(id){
   openM(`<h2>${esc(v.victim)||"(senza nome)"}</h2><small style="color:var(--m)">Evento censito su leak site</small>
   <div class="kv" style="margin-top:12px"><div>Gang</div><div>${gl(v.group)}</div>
   <div>Paese</div><div>${esc(v.country)||"n/d"}</div>
+  <div>Sede (stima OSM)</div><div>${esc(hq(v))||"n/d"}</div>
   <div>Settore</div><div>${esc(v.sector)||"n/d"}</div>
   <div>Data scoperta</div><div>${fd(v.date)}</div>
   <div>Sito web</div><div>${esc(v.site)||"n/d"}</div>
@@ -196,7 +271,7 @@ function showVictim(id){
   <h4>Descrizione</h4><p>${esc(v.desc)||"<i>Nessuna descrizione disponibile.</i>"}</p>
   <h4>Altre vittime della stessa gang</h4>${same.map(x=>`<div class="mini"><a class="lnk" data-v="${x.id}">${esc(x.victim)}</a> <small style="color:var(--m)">· ${esc(x.country)} · ${fd(x.date)}</small></div>`).join("")||"<i>Nessuna</i>"}
   <h4>Notizie correlate</h4>${newsList(news)}
-  <div class="warn">⚠ Dato OSINT: si tratta di una rivendicazione pubblicata dai criminali sul loro leak site. Non è verificata né confermata dall'organizzazione indicata.</div>`);
+  <div class="warn">⚠ Dato OSINT: si tratta di una rivendicazione pubblicata dai criminali sul loro leak site. Non è verificata né confermata dall'organizzazione indicata. La sede è una stima.</div>`);
 }
 
 document.addEventListener("click",e=>{
@@ -210,8 +285,10 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape")closeM()});
 const V={
  ov(){const k=[["Vittime IT (leak site)",D.it_victims.length,"var(--r)"],["CVE sfruttate (KEV)",D.kev.length,"var(--o)"],["C2 attivi",D.c2.filter(x=>x.status==="online").length,"var(--a)"],["Notizie",D.news_it.length+D.news_en.length,"var(--g)"]];
   const top=topN(D.it_victims.map(v=>v.group),8);
-  return `<div class="card mapc"><canvas id="map"></canvas><div class="mapt">Global threat map · OSINT</div>
-  <div class="leg"><div><i style="background:#f0883e"></i>Vittime rivendicate (leak site)</div><div><i style="background:#f85149"></i>Server C2 (paese di hosting)</div><div><i style="background:#50c8ff"></i>Italia</div></div>
+  return `<div class="card mapc"><canvas id="map"></canvas><div class="mapt" id="mapt">Global threat map · OSINT</div>
+  <button class="act mapb" id="mback">← Mappa mondiale</button>
+  <div class="leg" id="leg"><div><i style="background:#f0883e"></i>Vittime rivendicate (leak site)</div><div><i style="background:#f85149"></i>Server C2 (paese di hosting)</div><div><i style="background:#50c8ff"></i>Italia · clicca per lo zoom</div></div>
+  <div class="itp" id="itp"></div>
   <div class="tick" id="tick"></div><div class="mapn" id="mapn"></div></div>
   <div class="kpis">${k.map(x=>`<div class="card kpi"><div class="v" style="color:${x[2]}">${x[1]}</div><div class="l">${x[0]}</div></div>`).join("")}</div>
   <div class="card"><h3>Gang ransomware più attive contro l'Italia (clicca per il profilo)</h3>${top.map(t=>`<div>${gl(t[0])} <span class="tag">${t[1]}</span></div>`).join("")||"<i>Nessun dato</i>"}</div>
@@ -227,6 +304,12 @@ const V={
  c2(){return `<div class="card"><h3>Botnet C2 – Feodo Tracker</h3>${tbl(["IP","Porta","Malware","Paese","Stato","Ultimo online"],
   D.c2.map(c=>`<tr><td>${esc(c.ip)}</td><td>${esc(c.port)}</td><td>${esc(c.malware)}</td><td>${esc(c.country)}</td><td>${esc(c.status)}</td><td>${esc(c.last_online)}</td></tr>`))}</div>`},
  news(){return `<div class="card"><h3>Italia</h3>${newsList(D.news_it)}</div><div class="card"><h3>Internazionali</h3>${newsList(D.news_en)}</div>`},
+ bull(){const q=($("#bq")?$("#bq").value:"").toLowerCase();
+  const f=D.bulletins.filter(b=>!q||((b.title||"")+" "+(b.summary||"")+" "+(b.source||"")).toLowerCase().includes(q));
+  return `<div class="card"><h3>Bollettini e alert di CSIRT Italia e ACN</h3>
+  <div class="tools"><input id="bq" class="inp" placeholder="Cerca nei bollettini..." value="${esc(q)}"></div>
+  ${newsList(f).replace("Nessun dato","Nessun bollettino disponibile.")}
+  <div class="warn">I bollettini istituzionali sono pubblicati da CSIRT Italia (ACN). Per gli alert completi e le raccomandazioni di mitigazione consulta il sito ufficiale: <a href="https://www.csirt.gov.it/" target="_blank" rel="noopener noreferrer">csirt.gov.it ↗</a></div></div>`},
  ioc(){return `<div class="card"><div class="tools"><button class="act" id="icsv">Esporta CSV</button></div>${tbl(["Tipo","Valore","Contesto"],
   [...D.c2.map(c=>`<tr><td>ip</td><td>${esc(c.ip)}:${esc(c.port)}</td><td>${esc(c.malware)} C2</td></tr>`),
    ...D.kev.map(v=>`<tr><td>cve</td><td>${esc(v.cve)}</td><td>${esc(v.vendor)} ${esc(v.product)}</td></tr>`)])}</div>`},
@@ -241,6 +324,7 @@ const V={
    +sec("Vittime mondo",D.world_victims.filter(m),a=>tbl(["Vittima","Gang","Paese"],a.map(v=>vrow(v,[esc(v.victim),gl(v.group),esc(v.country)]))))
    +sec("CVE KEV",D.kev.filter(m),a=>tbl(["CVE","Prodotto","Nome"],a.map(v=>`<tr><td>${esc(v.cve)}</td><td>${esc(v.vendor)} ${esc(v.product)}</td><td>${esc(v.name)}</td></tr>`)))
    +sec("C2",D.c2.filter(m),a=>tbl(["IP","Malware","Paese"],a.map(c=>`<tr><td>${esc(c.ip)}</td><td>${esc(c.malware)}</td><td>${esc(c.country)}</td></tr>`)))
+   +sec("Bollettini istituzionali",D.bulletins.filter(m),newsList)
    +sec("Notizie",[...D.news_it,...D.news_en].filter(m),newsList))||'<div class="card">Nessun risultato.</div>'}
 };
 function dl(name,rows){const c=rows.map(r=>r.map(x=>'"'+String(x??"").replace(/"/g,'""')+'"').join(",")).join("\n");
@@ -251,10 +335,11 @@ function render(){
   if(!D){$("#main").innerHTML='<div class="card">Nessun dato disponibile.</div>';return}
   $("#main").innerHTML=V[tab]();
   if(tab==="ov")startMap();
+  if(tab==="bull"){const inp=$("#bq");if(inp)inp.oninput=()=>{render();const i=$("#bq");i.focus();i.setSelectionRange(i.value.length,i.value.length)}}
   if(tab==="it"){const draw=()=>{const g=$("#gf").value;
-    $("#vt").innerHTML=tbl(["Vittima","Gang","Settore","Scoperta","Sito"],D.it_victims.filter(v=>!g||v.group===g).map(v=>vrow(v,[esc(v.victim),gl(v.group),esc(v.sector),fd(v.date),esc(v.site)])))};
+    $("#vt").innerHTML=tbl(["Vittima","Gang","Settore","Sede stimata","Scoperta","Sito"],D.it_victims.filter(v=>!g||v.group===g).map(v=>vrow(v,[esc(v.victim),gl(v.group),esc(v.sector),esc(hq(v)),fd(v.date),esc(v.site)])))};
     $("#gf").onchange=draw;draw();
-    $("#csv").onclick=()=>dl("vittime_italia.csv",[["vittima","gang","settore","data","sito"],...D.it_victims.map(v=>[v.victim,v.group,v.sector,v.date,v.site])])}
+    $("#csv").onclick=()=>dl("vittime_italia.csv",[["vittima","gang","settore","sede_stimata","data","sito"],...D.it_victims.map(v=>[v.victim,v.group,v.sector,hq(v),v.date,v.site])])}
   if(tab==="ioc")$("#icsv").onclick=()=>dl("ioc.csv",[["tipo","valore","contesto"],...D.c2.map(c=>["ip",c.ip+":"+c.port,c.malware]),...D.kev.map(v=>["cve",v.cve,v.vendor+" "+v.product])]);
 }
 window.addEventListener("resize",()=>{if(tab==="ov"&&D)startMap()});
