@@ -15,22 +15,32 @@ main{padding:20px}.card{background:var(--p);border:1px solid var(--l);border-rad
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:16px}
 .kpi .v{font-size:28px;font-weight:700}.kpi .l{color:var(--m);font-size:12px}
 table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--l);vertical-align:top}
-th{color:var(--m);font-size:12px}tr:hover td{background:var(--p2)}
-a{color:var(--a);text-decoration:none}.tag{background:var(--p2);border:1px solid var(--l);border-radius:4px;padding:1px 6px;font-size:11px}
+th{color:var(--m);font-size:12px}tr:hover td{background:var(--p2)}tr[data-v]{cursor:pointer}
+a{color:var(--a);text-decoration:none}.lnk{color:var(--a);cursor:pointer;text-decoration:underline dotted}
+.tag{background:var(--p2);border:1px solid var(--l);border-radius:4px;padding:1px 6px;font-size:11px;margin:1px;display:inline-block}
 .bad{color:var(--r)}.ok{color:var(--g)}.tools{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
-select,button.act{background:var(--p2);color:var(--tx);border:1px solid var(--l);border-radius:6px;padding:7px 10px}
+select,button.act{background:var(--p2);color:var(--tx);border:1px solid var(--l);border-radius:6px;padding:7px 10px;cursor:pointer}
 .news{padding:10px 0;border-bottom:1px solid var(--l)}.news small{color:var(--m)}
 section{display:none}section.on{display:block}h3{margin:0 0 10px;color:var(--m);font-size:13px;text-transform:uppercase}
+#modal{position:fixed;inset:0;background:#000b;display:none;align-items:flex-start;justify-content:center;z-index:20;padding:30px 12px;overflow:auto}
+#modal.show{display:flex}
+#mbox{background:var(--p);border:1px solid var(--l);border-radius:10px;padding:22px;max-width:760px;width:100%;position:relative}
+#mbox h2{margin:0 0 4px}#mbox h4{margin:16px 0 6px;color:var(--m);font-size:12px;text-transform:uppercase}
+#mclose{position:absolute;top:10px;right:12px;background:none;border:0;color:var(--m);font-size:22px;cursor:pointer}
+.kv{display:grid;grid-template-columns:140px 1fr;gap:6px 10px}.kv div:nth-child(odd){color:var(--m)}
+.warn{background:#3a2a10;border:1px solid #6b4a14;border-radius:6px;padding:8px 10px;font-size:12px;margin-top:14px;color:#e8c27a}
+.mini{padding:6px 0;border-bottom:1px solid var(--l)}
 </style></head><body>
 <header><h1>🛡 ThreatIntel Hub</h1>
 <input id="q" placeholder="Ricerca globale: CVE, IP, azienda, gang, malware, notizie...">
 <span id="upd">Caricamento…</span></header>
 <nav id="nav"></nav><main id="main"></main>
+<div id="modal"><div id="mbox"></div></div>
 
 <script>
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const safeUrl=u=>/^https?:\/\//i.test(u)?esc(u):"#";
+const safeUrl=u=>/^https?:\/\//i.test(u||"")?esc(u):"";
 const fd=s=>{const d=new Date(s);return isNaN(d)?esc(s||""):d.toLocaleString("it-IT",{dateStyle:"short",timeStyle:"short"})};
 let D=null,tab="it";
 const TABS=[["ov","Overview"],["it","🇮🇹 Landscape Italia"],["kev","Vulnerabilità KEV"],["c2","Botnet C2"],["news","Notizie"],["ioc","IOC"],["feeds","Feed"],["search","Ricerca"]];
@@ -38,28 +48,83 @@ $("#nav").innerHTML=TABS.map(t=>`<button data-t="${t[0]}">${t[1]}</button>`).joi
 $("#nav").onclick=e=>{if(e.target.dataset.t){tab=e.target.dataset.t;render()}};
 $("#q").oninput=()=>{if($("#q").value.trim().length>1){tab="search"}render()};
 
+const G=()=>(D&&D.groups&&!Array.isArray(D.groups))?D.groups:{};
+const allV=()=>[...D.it_victims,...D.world_victims];
+const gl=g=>g?`<a class="lnk" data-g="${esc(g)}">${esc(g)}</a>`:"";
+const vrow=(v,cols)=>`<tr data-v="${v.id}">${cols.map(c=>`<td>${c}</td>`).join("")}</tr>`;
+
 async function load(){
   try{const r=await fetch("data.json?_="+Date.now(),{cache:"no-store"});D=await r.json();
+    D.it_victims.forEach((v,i)=>v.id="i"+i);D.world_victims.forEach((v,i)=>v.id="w"+i);
     $("#upd").textContent="Dati aggiornati: "+fd(D.generated)}
   catch(e){$("#upd").innerHTML='<span class="bad">data.json non raggiungibile</span>'}
-  render();
+  if(!$("#modal").classList.contains("show"))render();
 }
 function tbl(h,rows){return `<table><thead><tr>${h.map(x=>`<th>${x}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table>`}
-function newsList(a){return a.map(n=>`<div class="news"><a href="${safeUrl(n.link)}" target="_blank" rel="noopener noreferrer">${esc(n.title)}</a><br><small>${esc(n.source)} · ${fd(n.date)}</small><br><small>${esc(n.summary)}</small></div>`).join("")||"<i>Nessun dato</i>"}
+function newsList(a){return a.map(n=>`<div class="news"><a href="${safeUrl(n.link)||"#"}" target="_blank" rel="noopener noreferrer">${esc(n.title)}</a><br><small>${esc(n.source)} · ${fd(n.date)}</small><br><small>${esc(n.summary)}</small></div>`).join("")||"<i>Nessun dato</i>"}
+const relNews=(term)=>{const t=(term||"").toLowerCase();if(t.length<4)return[];return [...D.news_it,...D.news_en].filter(n=>(n.title+" "+n.summary).toLowerCase().includes(t)).slice(0,6)};
+const topN=(arr,k)=>{const m={};arr.forEach(x=>{if(x)m[x]=(m[x]||0)+1});return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,k)};
 
+/* ---------- MODALI ---------- */
+function openM(html){$("#mbox").innerHTML='<button id="mclose">×</button>'+html;$("#modal").classList.add("show");$("#modal").scrollTop=0}
+function closeM(){$("#modal").classList.remove("show")}
+function showGroup(name){
+  const key=name.toLowerCase(),info=G()[key]||{};
+  const vi=D.it_victims.filter(v=>(v.group||"").toLowerCase()===key);
+  const vw=D.world_victims.filter(v=>(v.group||"").toLowerCase()===key);
+  const all=[...vi,...vw];
+  const last=all.map(v=>v.date).sort().pop();
+  const sec=topN(all.map(v=>v.sector),6),cou=topN(vw.map(v=>v.country),6);
+  const news=relNews(name);
+  openM(`<h2>${esc(info.name||name)}</h2><small style="color:var(--m)">Threat actor / gruppo ransomware</small>
+  <h4>Profilo</h4><p>${esc(info.desc)||"<i>Nessuna descrizione disponibile dalla fonte.</i>"}</p>
+  <div class="kv"><div>Vittime in Italia</div><div><b>${vi.length}</b> (nei dati caricati)</div>
+  <div>Vittime recenti mondo</div><div>${vw.length}</div>
+  <div>Ultimo avvistamento</div><div>${last?fd(last):"n/d"}</div>
+  <div>Leak site noti</div><div>${info.sites??"n/d"}</div>
+  <div>Settori colpiti</div><div>${sec.map(s=>`<span class="tag">${esc(s[0])} · ${s[1]}</span>`).join("")||"n/d"}</div>
+  <div>Paesi (recenti)</div><div>${cou.map(s=>`<span class="tag">${esc(s[0])} · ${s[1]}</span>`).join("")||"n/d"}</div></div>
+  <h4>Ultime vittime italiane</h4>${vi.slice(0,10).map(v=>`<div class="mini"><a class="lnk" data-v="${v.id}">${esc(v.victim)}</a> <small style="color:var(--m)">· ${esc(v.sector)} · ${fd(v.date)}</small></div>`).join("")||"<i>Nessuna nei dati attuali</i>"}
+  <h4>Notizie correlate</h4>${newsList(news)}
+  <h4>Approfondimenti</h4><div><a href="https://www.ransomware.live/group/${encodeURIComponent(name)}" target="_blank" rel="noopener noreferrer">Scheda su ransomware.live ↗</a>
+  ${(info.profile||[]).map(p=>` · <a href="${safeUrl(p)}" target="_blank" rel="noopener noreferrer">Riferimento ↗</a>`).join("")}</div>`);
+}
+function showVictim(id){
+  const v=allV().find(x=>x.id===id);if(!v)return;
+  const same=allV().filter(x=>x.id!==id&&(x.group||"").toLowerCase()===(v.group||"").toLowerCase()).slice(0,6);
+  const news=relNews(v.victim);
+  openM(`<h2>${esc(v.victim)||"(senza nome)"}</h2><small style="color:var(--m)">Evento censito su leak site</small>
+  <div class="kv" style="margin-top:12px"><div>Gang</div><div>${gl(v.group)}</div>
+  <div>Paese</div><div>${esc(v.country)||"n/d"}</div>
+  <div>Settore</div><div>${esc(v.sector)||"n/d"}</div>
+  <div>Data scoperta</div><div>${fd(v.date)}</div>
+  <div>Sito web</div><div>${esc(v.site)||"n/d"}</div>
+  <div>Fonte</div><div>${safeUrl(v.link)?`<a href="${safeUrl(v.link)}" target="_blank" rel="noopener noreferrer">Apri scheda originale ↗</a>`:"n/d"}</div></div>
+  <h4>Descrizione</h4><p>${esc(v.desc)||"<i>Nessuna descrizione disponibile.</i>"}</p>
+  <h4>Altre vittime della stessa gang</h4>${same.map(x=>`<div class="mini"><a class="lnk" data-v="${x.id}">${esc(x.victim)}</a> <small style="color:var(--m)">· ${esc(x.country)} · ${fd(x.date)}</small></div>`).join("")||"<i>Nessuna</i>"}
+  <h4>Notizie correlate</h4>${newsList(news)}
+  <div class="warn">⚠ Dato OSINT: si tratta di una rivendicazione pubblicata dai criminali sul loro leak site. Non è verificata né confermata dall'organizzazione indicata.</div>`);
+}
+document.addEventListener("click",e=>{
+  if(e.target.id==="modal"||e.target.id==="mclose")return closeM();
+  const g=e.target.closest("[data-g]");if(g)return showGroup(g.dataset.g);
+  const v=e.target.closest("[data-v]");if(v)return showVictim(v.dataset.v);
+});
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeM()});
+
+/* ---------- VISTE ---------- */
 const V={
  ov(){const k=[["Vittime IT (leak site)",D.it_victims.length,"var(--r)"],["CVE sfruttate (KEV)",D.kev.length,"var(--o)"],["C2 attivi",D.c2.filter(x=>x.status==="online").length,"var(--a)"],["Notizie",D.news_it.length+D.news_en.length,"var(--g)"]];
-  const groups={};D.it_victims.forEach(v=>groups[v.group]=(groups[v.group]||0)+1);
-  const top=Object.entries(groups).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const top=topN(D.it_victims.map(v=>v.group),8);
   return `<div class="kpis">${k.map(x=>`<div class="card kpi"><div class="v" style="color:${x[2]}">${x[1]}</div><div class="l">${x[0]}</div></div>`).join("")}</div>
-  <div class="card"><h3>Gang ransomware più attive contro l'Italia</h3>${top.map(t=>`<div>${esc(t[0])} <span class="tag">${t[1]}</span></div>`).join("")||"<i>Nessun dato</i>"}</div>
+  <div class="card"><h3>Gang ransomware più attive contro l'Italia (clicca per il profilo)</h3>${top.map(t=>`<div>${gl(t[0])} <span class="tag">${t[1]}</span></div>`).join("")||"<i>Nessun dato</i>"}</div>
   <div class="card"><h3>Ultime notizie italiane</h3>${newsList(D.news_it.slice(0,6))}</div>`},
  it(){const gs=[...new Set(D.it_victims.map(v=>v.group))].sort();
-  return `<div class="card"><h3>Vittime italiane nei leak site (ransomware.live)</h3>
+  return `<div class="card"><h3>Vittime italiane nei leak site (clicca una riga per il dettaglio)</h3>
   <div class="tools"><select id="gf"><option value="">Tutte le gang</option>${gs.map(g=>`<option>${esc(g)}</option>`).join("")}</select>
   <button class="act" id="csv">Esporta CSV</button></div><div id="vt"></div></div>
   <div class="card"><h3>Notizie italiane</h3>${newsList(D.news_it)}</div>
-  <div class="card"><h3>Contesto: attacchi recenti nel mondo</h3>${tbl(["Vittima","Gang","Paese","Data"],D.world_victims.slice(0,30).map(v=>`<tr><td>${esc(v.victim)}</td><td>${esc(v.group)}</td><td>${esc(v.country)}</td><td>${fd(v.date)}</td></tr>`))}</div>`},
+  <div class="card"><h3>Contesto: attacchi recenti nel mondo</h3>${tbl(["Vittima","Gang","Paese","Data"],D.world_victims.slice(0,30).map(v=>vrow(v,[esc(v.victim),gl(v.group),esc(v.country),fd(v.date)])))}</div>`},
  kev(){return `<div class="card"><h3>CISA KEV – vulnerabilità sfruttate attivamente</h3>${tbl(["CVE","Vendor/Prodotto","Nome","Aggiunta","Scadenza","Ransomware"],
   D.kev.map(v=>`<tr><td><a href="https://nvd.nist.gov/vuln/detail/${esc(v.cve)}" target="_blank" rel="noopener noreferrer">${esc(v.cve)}</a></td><td>${esc(v.vendor)} ${esc(v.product)}</td><td>${esc(v.name)}</td><td>${esc(v.added)}</td><td>${esc(v.due)}</td><td>${v.ransomware==="Known"?'<span class="bad">Sì</span>':esc(v.ransomware)}</td></tr>`))}</div>`},
  c2(){return `<div class="card"><h3>Botnet C2 – Feodo Tracker</h3>${tbl(["IP","Porta","Malware","Paese","Stato","Ultimo online"],
@@ -73,8 +138,10 @@ const V={
  search(){const q=$("#q").value.trim().toLowerCase();if(q.length<2)return '<div class="card">Digita almeno 2 caratteri nella barra in alto.</div>';
   const m=(o)=>JSON.stringify(o).toLowerCase().includes(q);
   const sec=(t,a,f)=>a.length?`<div class="card"><h3>${t} (${a.length})</h3>${f(a.slice(0,50))}</div>`:"";
-  return sec("Vittime Italia",D.it_victims.filter(m),a=>tbl(["Vittima","Gang","Settore","Data"],a.map(v=>`<tr><td>${esc(v.victim)}</td><td>${esc(v.group)}</td><td>${esc(v.sector)}</td><td>${fd(v.date)}</td></tr>`)))
-   +sec("Vittime mondo",D.world_victims.filter(m),a=>tbl(["Vittima","Gang","Paese"],a.map(v=>`<tr><td>${esc(v.victim)}</td><td>${esc(v.group)}</td><td>${esc(v.country)}</td></tr>`)))
+  const gm=Object.values(G()).filter(g=>(g.name+" "+g.desc).toLowerCase().includes(q));
+  return sec("Threat actor / gang",gm,a=>a.map(g=>`<div class="mini">${gl(g.name)} <small style="color:var(--m)">${esc((g.desc||"").slice(0,120))}</small></div>`).join(""))
+   +sec("Vittime Italia",D.it_victims.filter(m),a=>tbl(["Vittima","Gang","Settore","Data"],a.map(v=>vrow(v,[esc(v.victim),gl(v.group),esc(v.sector),fd(v.date)]))))
+   +sec("Vittime mondo",D.world_victims.filter(m),a=>tbl(["Vittima","Gang","Paese"],a.map(v=>vrow(v,[esc(v.victim),gl(v.group),esc(v.country)]))))
    +sec("CVE KEV",D.kev.filter(m),a=>tbl(["CVE","Prodotto","Nome"],a.map(v=>`<tr><td>${esc(v.cve)}</td><td>${esc(v.vendor)} ${esc(v.product)}</td><td>${esc(v.name)}</td></tr>`)))
    +sec("C2",D.c2.filter(m),a=>tbl(["IP","Malware","Paese"],a.map(c=>`<tr><td>${esc(c.ip)}</td><td>${esc(c.malware)}</td><td>${esc(c.country)}</td></tr>`)))
    +sec("Notizie",[...D.news_it,...D.news_en].filter(m),newsList)||'<div class="card">Nessun risultato.</div>'}
@@ -86,7 +153,7 @@ function render(){
   if(!D){$("#main").innerHTML='<div class="card">Nessun dato disponibile.</div>';return}
   $("#main").innerHTML=V[tab]();
   if(tab==="it"){const draw=()=>{const g=$("#gf").value;
-    $("#vt").innerHTML=tbl(["Vittima","Gang","Settore","Scoperta","Sito"],D.it_victims.filter(v=>!g||v.group===g).map(v=>`<tr><td>${esc(v.victim)}</td><td><span class="tag">${esc(v.group)}</span></td><td>${esc(v.sector)}</td><td>${fd(v.date)}</td><td>${esc(v.site)}</td></tr>`))};
+    $("#vt").innerHTML=tbl(["Vittima","Gang","Settore","Scoperta","Sito"],D.it_victims.filter(v=>!g||v.group===g).map(v=>vrow(v,[esc(v.victim),gl(v.group),esc(v.sector),fd(v.date),esc(v.site)])))};
     $("#gf").onchange=draw;draw();
     $("#csv").onclick=()=>dl("vittime_italia.csv",[["vittima","gang","settore","data","sito"],...D.it_victims.map(v=>[v.victim,v.group,v.sector,v.date,v.site])])}
   if(tab==="ioc")$("#icsv").onclick=()=>dl("ioc.csv",[["tipo","valore","contesto"],...D.c2.map(c=>["ip",c.ip+":"+c.port,c.malware]),...D.kev.map(v=>["cve",v.cve,v.vendor+" "+v.product])]);
