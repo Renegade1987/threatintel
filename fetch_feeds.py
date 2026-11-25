@@ -1,5 +1,3 @@
-python
-
 import json, os, re, html, urllib.request, xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -8,7 +6,7 @@ UA = {"User-Agent": "Mozilla/5.0 (ThreatIntelHub OSINT reader)"}
 OUT = "data.json"
 
 
-# ------------------------------------------------------------------ utilità
+# ---------------------------------------------------------------- utilità
 def get(url, timeout=30):
     req = urllib.request.Request(url, headers=UA)
     with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -30,7 +28,7 @@ def norm(s):
     return re.sub(r"[^a-z0-9]", "", (s or "").lower())
 
 
-# ------------------------------------------------------------------ notizie
+# ---------------------------------------------------------------- notizie
 def rss(url, source, lang):
     root = ET.fromstring(get(url))
     out = []
@@ -53,19 +51,18 @@ def rss(url, source, lang):
 
 
 def news_multi(items):
-    """Scarica più feed RSS: se uno fallisce, gli altri vengono mantenuti."""
     out, errors = [], []
     for url, source, lang in items:
         try:
             out += rss(url, source, lang)
         except Exception as e:
-            errors.append(f"{source}: {str(e)[:60]}")
+            errors.append(source + ": " + str(e)[:60])
     if not out and errors:
         raise RuntimeError("; ".join(errors))
     return out
 
 
-# ------------------------------------------------------------------ feed tecnici
+# ---------------------------------------------------------------- feed tecnici
 def kev():
     d = json.loads(get("https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"))
     v = sorted(d["vulnerabilities"], key=lambda x: x["dateAdded"], reverse=True)[:150]
@@ -120,7 +117,7 @@ def groups():
     return out
 
 
-# ------------------------------------------------------------------ MISP Galaxy
+# ---------------------------------------------------------------- MISP Galaxy
 GALAXY_URLS = [
     "https://raw.githubusercontent.com/MISP/misp-galaxy/main/clusters/ransomware.json",
     "https://raw.githubusercontent.com/MISP/misp-galaxy/main/clusters/threat-actor.json",
@@ -128,7 +125,6 @@ GALAXY_URLS = [
 
 
 def galaxy():
-    """Restituisce {nome_minuscolo: {name, desc, synonyms, refs}} unendo i cluster."""
     out, errors = {}, []
     for url in GALAXY_URLS:
         try:
@@ -137,4 +133,192 @@ def galaxy():
             errors.append(str(e)[:60])
             continue
         for v in d.get("values", []):
-            name = (v..
+            name = (v.get("value") or "").strip()
+            if not name:
+                continue
+            meta = v.get("meta") or {}
+            syn = [s for s in (meta.get("synonyms") or []) if isinstance(s, str)][:15]
+            refs = [r for r in (meta.get("refs") or [])
+                    if isinstance(r, str) and r.startswith("http")][:5]
+            key = name.lower()
+            cur = out.get(key)
+            if cur:
+                cur["synonyms"] = list(dict.fromkeys(cur["synonyms"] + syn))[:20]
+                cur["refs"] = list(dict.fromkeys(cur["refs"] + refs))[:6]
+                if not cur["desc"]:
+                    cur["desc"] = clean(v.get("description") or "")
+            else:
+                out[key] = {"name": name, "desc": clean(v.get("description") or ""),
+                            "synonyms": syn, "refs": refs}
+    if not out:
+        raise RuntimeError("; ".join(errors) or "nessun dato Galaxy")
+    return out
+
+
+def alias_index(gal):
+    """norm(nome o sinonimo) -> insieme di tutti i nomi normalizzati equivalenti."""
+    idx = {}
+    for g in gal.values():
+        names = {norm(g["name"])} | {norm(s) for s in g["synonyms"]}
+        names.discard("")
+        for n in names:
+            idx.setdefault(n, set()).update(names)
+    return idx
+
+
+# ---------------------------------------------------------------- MITRE ATT&CK
+MITRE_URL = "https://raw.githubusercontent.com/mitre-attack/attack-stix-data/master/enterprise-attack/enterprise-attack.json"
+
+ALIASES = {
+    "alphv": ["blackcat"], "blackcat": ["alphv"],
+    "revil": ["sodinokibi"], "sodinokibi": ["revil"],
+    "blackmatter": ["darkside"], "darkside": ["blackmatter"],
+    "royal": ["blacksuit"], "blacksuit": ["royal"],
+    "wizardspider": ["conti", "ryuk"], "conti": ["wizardspider"],
+    "lockbit": ["lockbit20", "lockbit30"],
+    "evilcorp": ["indrik", "dridex"],
+}
+
+
+def mitre(wanted, aidx):
+    objs = json.loads(get(MITRE_URL, timeout=180))["objects"]
+    live = {o["id"]: o for o in objs
+            if not o.get("revoked") and not o.get("x_mitre_deprecated")}
+    patterns = {i: o for i, o in live.items() if o["type"] == "attack-pattern"}
+    index = {}
+    for o in live.values():
+        if o["type"] in ("intrusion-set", "malware", "tool"):
+            for n in [o["name"]] + o.get("aliases", []) + o.get("x_mitre_aliases", []):
+                index.setdefault(norm(n), {})[o["id"]] = o
+    uses, sw_used = {}, {}
+    for r in live.values():
+        if r["type"] != "relationship" or r.get("relationship_type") != "uses":
+            continue
+        s, t = r["source_ref"], r["target_ref"]
+        if t in patterns:
+            uses.setdefault(s, set()).add(t)
+        elif t in live and live[t]["type"] in ("malware", "tool") \
+                and s in live and live[s]["type"] == "intrusion-set":
+            sw_used.setdefault(s, set()).add(t)
+
+    def ext(o):
+        for e in o.get("external_references", []):
+            if e.get("source_name") == "mitre-attack":
+                return e.get("external_id", ""), e.get("url", "")
+        return "", ""
+
+    def find(k):
+        c = dict(index.get(k) or {})
+        if not c:
+            c = dict(index.get(re.sub(r"\d+$", "", k)) or {})
+        if not c and len(k) >= 5:
+            for name, objs_ in index.items():
+                if name.startswith(k):
+                    c.update(objs_)
+        return c
+
+    out = {}
+    for w in wanted:
+        k = norm(w)
+        if len(k) < 3:
+            continue
+        cands = find(k)
+        alias = set(ALIASES.get(k, [])) | set(aidx.get(k, set()))
+        alias.discard(k)
+        for a in alias:
+            if len(a) >= 3:
+                cands.update(index.get(a) or {})
+        res = []
+        for o in list(cands.values())[:4]:
+            ids = set(uses.get(o["id"], []))
+            if o["type"] == "intrusion-set":
+                for sid in sw_used.get(o["id"], []):
+                    ids |= uses.get(sid, set())
+            tech = []
+            for pid in ids:
+                p = patterns[pid]
+                tid, url = ext(p)
+                tech.append({"id": tid, "name": p["name"], "url": url,
+                             "tactics": [kc["phase_name"] for kc in p.get("kill_chain_phases", [])]})
+            tech.sort(key=lambda t: t["id"])
+            eid, eurl = ext(o)
+            res.append({"name": o["name"], "id": eid, "url": eurl,
+                        "type": "Gruppo" if o["type"] == "intrusion-set" else "Software",
+                        "techniques": tech})
+        if res:
+            out[w.lower()] = res
+    return out
+
+
+# ---------------------------------------------------------------- esecuzione
+old = {}
+if os.path.exists(OUT):
+    try:
+        old = json.load(open(OUT, encoding="utf-8"))
+    except Exception:
+        old = {}
+
+now = datetime.now(timezone.utc).isoformat()
+data, status = {}, []
+
+
+def run(key, label, fn, default):
+    try:
+        data[key] = fn()
+        status.append({"feed": label, "ok": True, "count": len(data[key]),
+                       "updated": now, "error": ""})
+    except Exception as e:
+        data[key] = old.get(key, default)
+        prev = next((s for s in old.get("status", []) if s["feed"] == label), {})
+        status.append({"feed": label, "ok": False, "count": len(data[key]),
+                       "updated": prev.get("updated", ""), "error": str(e)[:120]})
+
+
+run("kev", "CISA KEV", kev, [])
+run("c2", "Feodo Tracker", feodo, [])
+run("it_victims", "ransomware.live (Italia)",
+    lambda: victims("https://api.ransomware.live/v2/countryvictims/IT", 300), [])
+run("world_victims", "ransomware.live (mondo)",
+    lambda: victims("https://api.ransomware.live/v2/recentvictims", 100), [])
+run("groups", "ransomware.live (gruppi)", groups, {})
+run("news_it", "Notizie IT", lambda: news_multi([
+    ("https://www.redhotcyber.com/feed/", "Red Hot Cyber", "it"),
+    ("https://www.cybersecurity360.it/feed/", "Cybersecurity360", "it")]), [])
+run("news_en", "Notizie EN", lambda: news_multi([
+    ("https://www.bleepingcomputer.com/feed/", "BleepingComputer", "en"),
+    ("https://feeds.feedburner.com/securityweek", "SecurityWeek", "en"),
+    ("https://therecord.media/feed", "The Record", "en"),
+    ("https://feeds.feedburner.com/TheHackersNews", "The Hacker News", "en")]), [])
+run("galaxy", "MISP Galaxy", galaxy, {})
+
+for n in ("news_it", "news_en"):
+    data[n].sort(key=lambda x: x.get("date", ""), reverse=True)
+
+# Arricchisce le schede dei gruppi con descrizioni, alias e riferimenti di Galaxy
+gal = data.get("galaxy") or {}
+aidx = alias_index(gal)
+gmap = {}
+for g in gal.values():
+    gmap[norm(g["name"])] = g
+    for s in g["synonyms"]:
+        gmap.setdefault(norm(s), g)
+for key, info in (data.get("groups") or {}).items():
+    g = gmap.get(norm(info.get("name", key)))
+    if not g:
+        continue
+    if not info.get("desc"):
+        info["desc"] = g["desc"]
+    if g["synonyms"]:
+        info.setdefault("extra", {})["alias (MISP Galaxy)"] = ", ".join(g["synonyms"][:8])
+    info["profile"] = list(dict.fromkeys((info.get("profile") or []) + g["refs"]))[:6]
+
+# MITRE ATT&CK
+wanted = {g["name"] for g in (data.get("groups") or {}).values()}
+for key in ("it_victims", "world_victims"):
+    wanted |= {v["group"] for v in data.get(key, []) if v.get("group")}
+run("mitre", "MITRE ATT&CK", lambda: mitre(wanted, aidx), {})
+
+data["generated"] = now
+data["status"] = status
+json.dump(data, open(OUT, "w", encoding="utf-8"), ensure_ascii=False)
+print("OK", [(s["feed"], s["ok"]) for s in status])
