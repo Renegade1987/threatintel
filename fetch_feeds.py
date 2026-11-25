@@ -58,15 +58,30 @@ def victims(url, limit):
                     "sector": x.get("activity") or "",
                     "date": x.get("discovered") or x.get("published") or "",
                     "site": x.get("website") or "",
+                    "desc": clean(x.get("description"))[:300],
                     "link": x.get("permalink") or x.get("post_url") or x.get("url") or ""})
     out.sort(key=lambda v: v["date"], reverse=True)
     return out[:limit]
-
+def groups():
+    d = json.loads(get("https://api.ransomware.live/v2/groups"))
+    out = {}
+    for g in d:
+        name = (g.get("name") or "").strip()
+        if not name:
+            continue
+        prof = g.get("profile") or []
+        out[name.lower()] = {
+            "name": name,
+            "desc": clean(g.get("description") or ""),
+            "profile": [p for p in prof if isinstance(p, str) and p.startswith("http")][:5],
+            "sites": len(g.get("locations") or [])}
+    return out
 SOURCES = {
     "kev": ("CISA KEV", kev),
     "c2": ("Feodo Tracker", feodo),
     "it_victims": ("ransomware.live (Italia)", lambda: victims("https://api.ransomware.live/v2/countryvictims/IT", 300)),
     "world_victims": ("ransomware.live (mondo)", lambda: victims("https://api.ransomware.live/v2/recentvictims", 100)),
+    "groups": ("ransomware.live (gruppi)", groups),
     "news_it": ("Notizie IT", lambda: sum([
         rss("https://www.redhotcyber.com/feed/", "Red Hot Cyber", "it"),
         rss("https://www.cybersecurity360.it/feed/", "Cybersecurity360", "it")], [])),
