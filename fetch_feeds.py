@@ -2,20 +2,18 @@ import json, os, re, html, urllib.request, xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 
-UA = {"User-Agent": "Mozilla/5.0 (ThreatIntelHub OSINT reader)"}
+UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+      "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
+      "Accept-Language": "it-IT,it;q=0.9,en;q=0.8"}
 OUT = "data.json"
 
-
-# ---------------------------------------------------------------- utilità
 def get(url, timeout=30):
     req = urllib.request.Request(url, headers=UA)
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read()
 
-
 def clean(t):
     return html.unescape(re.sub(r"<[^>]+>", "", t or "")).strip()[:300]
-
 
 def iso(s):
     try:
@@ -23,22 +21,20 @@ def iso(s):
     except Exception:
         return s or ""
 
-
 def norm(s):
     return re.sub(r"[^a-z0-9]", "", (s or "").lower())
 
-
-# ---------------------------------------------------------------- notizie
 def rss(url, source, lang):
-    root = ET.fromstring(get(url))
+    raw = get(url).lstrip(b"\xef\xbb\xbf \r\n\t")
+    if not raw.startswith(b"<"):
+        raise ValueError("risposta non XML: " + raw[:60].decode("utf-8", "replace"))
+    root = ET.fromstring(raw)
     out = []
     for it in root.iter("item"):
-        out.append({"title": clean(it.findtext("title")),
-                    "link": (it.findtext("link") or "").strip(),
-                    "date": iso(it.findtext("pubDate")),
-                    "summary": clean(it.findtext("description")),
+        out.append({"title": clean(it.findtext("title")), "link": (it.findtext("link") or "").strip(),
+                    "date": iso(it.findtext("pubDate")), "summary": clean(it.findtext("description")),
                     "source": source, "lang": lang})
-    if not out:  # Atom
+    if not out:
         ns = "{http://www.w3.org/2005/Atom}"
         for e in root.iter(ns + "entry"):
             l = e.find(ns + "link")
@@ -49,36 +45,35 @@ def rss(url, source, lang):
                         "source": source, "lang": lang})
     return out[:25]
 
-
 def news_multi(items):
     out, errors = [], []
-    for url, source, lang in items:
-        try:
-            out += rss(url, source, lang)
-        except Exception as e:
-            errors.append(source + ": " + str(e)[:60])
+    for urls, source, lang in items:
+        last = ""
+        for url in urls:
+            try:
+                out += rss(url, source, lang)
+                last = ""
+                break
+            except Exception as e:
+                last = str(e)[:80]
+        if last:
+            errors.append(source + ": " + last)
     if not out and errors:
-        raise RuntimeError("; ".join(errors))
+        raise RuntimeError(" | ".join(errors))
     return out
 
-
-# ---------------------------------------------------------------- feed tecnici
 def kev():
     d = json.loads(get("https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"))
     v = sorted(d["vulnerabilities"], key=lambda x: x["dateAdded"], reverse=True)[:150]
     return [{"cve": x["cveID"], "vendor": x["vendorProject"], "product": x["product"],
-             "name": x["vulnerabilityName"], "added": x["dateAdded"],
-             "due": x.get("dueDate", ""),
+             "name": x["vulnerabilityName"], "added": x["dateAdded"], "due": x.get("dueDate", ""),
              "ransomware": x.get("knownRansomwareCampaignUse", "Unknown")} for x in v]
-
 
 def feodo():
     d = json.loads(get("https://feodotracker.abuse.ch/downloads/ipblocklist.json"))
     return [{"ip": x.get("ip_address"), "port": x.get("port"), "malware": x.get("malware"),
              "country": x.get("country"), "status": x.get("status"),
-             "first_seen": x.get("first_seen"), "last_online": x.get("last_online")}
-            for x in d][:300]
-
+             "first_seen": x.get("first_seen"), "last_online": x.get("last_online")} for x in d][:300]
 
 def victims(url, limit):
     d = json.loads(get(url))
@@ -86,15 +81,12 @@ def victims(url, limit):
     for x in d:
         out.append({"victim": x.get("victim") or x.get("post_title") or "",
                     "group": x.get("group") or x.get("group_name") or "",
-                    "country": x.get("country") or "",
-                    "sector": x.get("activity") or "",
+                    "country": x.get("country") or "", "sector": x.get("activity") or "",
                     "date": x.get("discovered") or x.get("published") or "",
-                    "site": x.get("website") or "",
-                    "desc": clean(x.get("description")),
+                    "site": x.get("website") or "", "desc": clean(x.get("description")),
                     "link": x.get("permalink") or x.get("post_url") or x.get("url") or ""})
     out.sort(key=lambda v: v["date"], reverse=True)
     return out[:limit]
-
 
 def groups():
     d = json.loads(get("https://api.ransomware.live/v2/groups"))
@@ -106,23 +98,15 @@ def groups():
             continue
         prof = g.get("profile") or []
         extra = {k: str(v)[:200] for k, v in g.items()
-                 if k not in known and isinstance(v, (str, int, float))
-                 and v not in ("", None)}
-        out[name.lower()] = {
-            "name": name,
-            "desc": clean(g.get("description") or ""),
-            "profile": [p for p in prof if isinstance(p, str) and p.startswith("http")][:5],
-            "sites": len(g.get("locations") or []),
-            "extra": extra}
+                 if k not in known and isinstance(v, (str, int, float)) and v not in ("", None)}
+        out[name.lower()] = {"name": name, "desc": clean(g.get("description") or ""),
+                             "profile": [p for p in prof if isinstance(p, str) and p.startswith("http")][:5],
+                             "sites": len(g.get("locations") or []), "extra": extra}
     return out
 
-
-# ---------------------------------------------------------------- MISP Galaxy
 GALAXY_URLS = [
     "https://raw.githubusercontent.com/MISP/misp-galaxy/main/clusters/ransomware.json",
-    "https://raw.githubusercontent.com/MISP/misp-galaxy/main/clusters/threat-actor.json",
-]
-
+    "https://raw.githubusercontent.com/MISP/misp-galaxy/main/clusters/threat-actor.json"]
 
 def galaxy():
     out, errors = {}, []
@@ -138,8 +122,7 @@ def galaxy():
                 continue
             meta = v.get("meta") or {}
             syn = [s for s in (meta.get("synonyms") or []) if isinstance(s, str)][:15]
-            refs = [r for r in (meta.get("refs") or [])
-                    if isinstance(r, str) and r.startswith("http")][:5]
+            refs = [r for r in (meta.get("refs") or []) if isinstance(r, str) and r.startswith("http")][:5]
             key = name.lower()
             cur = out.get(key)
             if cur:
@@ -154,9 +137,7 @@ def galaxy():
         raise RuntimeError("; ".join(errors) or "nessun dato Galaxy")
     return out
 
-
 def alias_index(gal):
-    """norm(nome o sinonimo) -> insieme di tutti i nomi normalizzati equivalenti."""
     idx = {}
     for g in gal.values():
         names = {norm(g["name"])} | {norm(s) for s in g["synonyms"]}
@@ -165,10 +146,7 @@ def alias_index(gal):
             idx.setdefault(n, set()).update(names)
     return idx
 
-
-# ---------------------------------------------------------------- MITRE ATT&CK
 MITRE_URL = "https://raw.githubusercontent.com/mitre-attack/attack-stix-data/master/enterprise-attack/enterprise-attack.json"
-
 ALIASES = {
     "alphv": ["blackcat"], "blackcat": ["alphv"],
     "revil": ["sodinokibi"], "sodinokibi": ["revil"],
@@ -176,14 +154,11 @@ ALIASES = {
     "royal": ["blacksuit"], "blacksuit": ["royal"],
     "wizardspider": ["conti", "ryuk"], "conti": ["wizardspider"],
     "lockbit": ["lockbit20", "lockbit30"],
-    "evilcorp": ["indrik", "dridex"],
-}
-
+    "evilcorp": ["indrik", "dridex"]}
 
 def mitre(wanted, aidx):
     objs = json.loads(get(MITRE_URL, timeout=180))["objects"]
-    live = {o["id"]: o for o in objs
-            if not o.get("revoked") and not o.get("x_mitre_deprecated")}
+    live = {o["id"]: o for o in objs if not o.get("revoked") and not o.get("x_mitre_deprecated")}
     patterns = {i: o for i, o in live.items() if o["type"] == "attack-pattern"}
     index = {}
     for o in live.values():
@@ -197,8 +172,7 @@ def mitre(wanted, aidx):
         s, t = r["source_ref"], r["target_ref"]
         if t in patterns:
             uses.setdefault(s, set()).add(t)
-        elif t in live and live[t]["type"] in ("malware", "tool") \
-                and s in live and live[s]["type"] == "intrusion-set":
+        elif t in live and live[t]["type"] in ("malware", "tool") and s in live and live[s]["type"] == "intrusion-set":
             sw_used.setdefault(s, set()).add(t)
 
     def ext(o):
@@ -249,8 +223,6 @@ def mitre(wanted, aidx):
             out[w.lower()] = res
     return out
 
-
-# ---------------------------------------------------------------- esecuzione
 old = {}
 if os.path.exists(OUT):
     try:
@@ -261,40 +233,36 @@ if os.path.exists(OUT):
 now = datetime.now(timezone.utc).isoformat()
 data, status = {}, []
 
-
 def run(key, label, fn, default):
     try:
         data[key] = fn()
-        status.append({"feed": label, "ok": True, "count": len(data[key]),
-                       "updated": now, "error": ""})
+        status.append({"feed": label, "ok": True, "count": len(data[key]), "updated": now, "error": ""})
     except Exception as e:
         data[key] = old.get(key, default)
         prev = next((s for s in old.get("status", []) if s["feed"] == label), {})
         status.append({"feed": label, "ok": False, "count": len(data[key]),
                        "updated": prev.get("updated", ""), "error": str(e)[:120]})
 
-
 run("kev", "CISA KEV", kev, [])
 run("c2", "Feodo Tracker", feodo, [])
-run("it_victims", "ransomware.live (Italia)",
-    lambda: victims("https://api.ransomware.live/v2/countryvictims/IT", 300), [])
-run("world_victims", "ransomware.live (mondo)",
-    lambda: victims("https://api.ransomware.live/v2/recentvictims", 100), [])
+run("it_victims", "ransomware.live (Italia)", lambda: victims("https://api.ransomware.live/v2/countryvictims/IT", 300), [])
+run("world_victims", "ransomware.live (mondo)", lambda: victims("https://api.ransomware.live/v2/recentvictims", 100), [])
 run("groups", "ransomware.live (gruppi)", groups, {})
 run("news_it", "Notizie IT", lambda: news_multi([
-    ("https://www.redhotcyber.com/feed/", "Red Hot Cyber", "it"),
-    ("https://www.cybersecurity360.it/feed/", "Cybersecurity360", "it")]), [])
+    (["https://www.redhotcyber.com/feed/",
+      "https://news.google.com/rss/search?q=site:redhotcyber.com&hl=it&gl=IT&ceid=IT:it"], "Red Hot Cyber", "it"),
+    (["https://www.cybersecurity360.it/feed/",
+      "https://news.google.com/rss/search?q=site:cybersecurity360.it&hl=it&gl=IT&ceid=IT:it"], "Cybersecurity360", "it")]), [])
 run("news_en", "Notizie EN", lambda: news_multi([
-    ("https://www.bleepingcomputer.com/feed/", "BleepingComputer", "en"),
-    ("https://feeds.feedburner.com/securityweek", "SecurityWeek", "en"),
-    ("https://therecord.media/feed", "The Record", "en"),
-    ("https://feeds.feedburner.com/TheHackersNews", "The Hacker News", "en")]), [])
+    (["https://www.bleepingcomputer.com/feed/"], "BleepingComputer", "en"),
+    (["https://feeds.feedburner.com/securityweek"], "SecurityWeek", "en"),
+    (["https://therecord.media/feed"], "The Record", "en"),
+    (["https://feeds.feedburner.com/TheHackersNews"], "The Hacker News", "en")]), [])
 run("galaxy", "MISP Galaxy", galaxy, {})
 
 for n in ("news_it", "news_en"):
     data[n].sort(key=lambda x: x.get("date", ""), reverse=True)
 
-# Arricchisce le schede dei gruppi con descrizioni, alias e riferimenti di Galaxy
 gal = data.get("galaxy") or {}
 aidx = alias_index(gal)
 gmap = {}
@@ -312,7 +280,6 @@ for key, info in (data.get("groups") or {}).items():
         info.setdefault("extra", {})["alias (MISP Galaxy)"] = ", ".join(g["synonyms"][:8])
     info["profile"] = list(dict.fromkeys((info.get("profile") or []) + g["refs"]))[:6]
 
-# MITRE ATT&CK
 wanted = {g["name"] for g in (data.get("groups") or {}).values()}
 for key in ("it_victims", "world_victims"):
     wanted |= {v["group"] for v in data.get(key, []) if v.get("group")}
