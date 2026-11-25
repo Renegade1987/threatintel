@@ -250,9 +250,13 @@ run("world_victims", "ransomware.live (mondo)", lambda: victims("https://api.ran
 run("groups", "ransomware.live (gruppi)", groups, {})
 run("news_it", "Notizie IT", lambda: news_multi([
     (["https://www.redhotcyber.com/feed/",
-      "https://news.google.com/rss/search?q=site:redhotcyber.com&hl=it&gl=IT&ceid=IT:it"], "Red Hot Cyber", "it"),
+      "https://news.google.com/rss/search?q=site:redhotcyber.com&hl=it&gl=IT&ceid=IT:it",
+      "https://news.google.com/rss/search?q=%22Red+Hot+Cyber%22&hl=it&gl=IT&ceid=IT:it"], "Red Hot Cyber", "it"),
     (["https://www.cybersecurity360.it/feed/",
-      "https://news.google.com/rss/search?q=site:cybersecurity360.it&hl=it&gl=IT&ceid=IT:it"], "Cybersecurity360", "it")]), [])
+      "https://news.google.com/rss/search?q=site:cybersecurity360.it&hl=it&gl=IT&ceid=IT:it",
+      "https://news.google.com/rss/search?q=cybersecurity360&hl=it&gl=IT&ceid=IT:it"], "Cybersecurity360", "it"),
+    (["https://news.google.com/rss/search?q=ransomware+OR+attacco+hacker+OR+cyberattacco+Italia&hl=it&gl=IT&ceid=IT:it"],
+     "Google News (cyber Italia)", "it")]), [])
 run("news_en", "Notizie EN", lambda: news_multi([
     (["https://www.bleepingcomputer.com/feed/"], "BleepingComputer", "en"),
     (["https://feeds.feedburner.com/securityweek"], "SecurityWeek", "en"),
