@@ -108,6 +108,8 @@ function showPlace(title,list){
   <div style="margin-top:10px">${list.map(v=>`<div class="mini"><a class="lnk" data-v="${v.id}">${esc(v.victim)}</a> <small style="color:var(--m)">· ${esc(v.group)} · ${esc(v.sector)} · ${fd(v.date)}${hq(v)?" · "+esc(hq(v)):""}</small></div>`).join("")}</div>
   <div class="warn">⚠ La sede è una stima ricavata da OpenStreetMap in base al nome dell'azienda: può essere una filiale o un omonimo. Le vittime sono rivendicazioni dei criminali, non verificate.</div>`);
 }
+<div class="warn">⚠ La sede è una stima ricavata da OpenStreetMap in base al nome dell'azienda: può essere una filiale o un omonimo. Le vittime sono rivendicazioni dei criminali, non verificate.</div>`);
+}
 html
 
 function startMap(){
