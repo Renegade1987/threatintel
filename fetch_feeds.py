@@ -1,3 +1,5 @@
+python
+
 import json, os, re, html, gzip, time, urllib.request, urllib.parse, urllib.error, xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
 from email.utils import parsedate_to_datetime
@@ -319,9 +321,10 @@ def build_geo(vs, cache, budget=40):
             time.sleep(1.1)
     return geo
 
-# ---------------------------------------------------------------- CVE: KEV + bollettini + NVD + EPSS
+# ---------------------------------------------------------------- CVE
 CVE_RE = re.compile(r"CVE-\d{4}-\d{4,7}", re.I)
 KW_RE = re.compile(r"critic|zero[- ]?day|sfruttat|actively exploited|exploited|\brce\b|remote code|vulnerabilit", re.I)
+NVD_LOOKUPS = 8
 
 def nvd_parse(c):
     desc = next((d.get("value", "") for d in c.get("descriptions", []) if d.get("lang") == "en"), "")
@@ -387,9 +390,9 @@ def build_cves(data, old):
     crit = {}
     try:
         crit = nvd_critical()
+        time.sleep(6.5)
     except Exception:
         pass
-    time.sleep(6.5)
     ent = {}
     for i in set(ment) | set(kev_m) | set(crit) | set(prev):
         p, k, n = prev.get(i, {}), kev_m.get(i), crit.get(i)
@@ -418,7 +421,7 @@ def build_cves(data, old):
             ent[i] = e
     need = sorted([e for e in ent.values() if e["cvss"] is None],
                   key=lambda e: (0 if "Bollettino" in e["sources"] else 1 if e["mentions"] else 2))
-    for e in need[:12]:
+    for e in need[:NVD_LOOKUPS]:
         try:
             r = nvd_lookup(e["cve"])
             if r:
@@ -447,6 +450,7 @@ def vuln_alerts(data):
     out.sort(key=lambda x: x.get("date", ""), reverse=True)
     return out[:40]
 
+# ---------------------------------------------------------------- esecuzione
 old = {}
 if os.path.exists(OUT):
     try:
@@ -542,5 +546,8 @@ else:
 
 data["generated"] = now
 data["status"] = status
-json.dump(data, open(OUT, "w", encoding="utf-8"), ensure_ascii=False)
+tmp = OUT + ".tmp"
+with open(tmp, "w", encoding="utf-8") as fh:
+    json.dump(data, fh, ensure_ascii=False)
+os.replace(tmp, OUT)
 print("OK", [(s["feed"], s["ok"]) for s in status])
