@@ -138,8 +138,12 @@ def galaxy():
                 if not cur["desc"]:
                     cur["desc"] = clean(v.get("description") or "")
             else:
+                mv = lambda x: ", ".join(map(str, x)) if isinstance(x, list) else str(x or "")
                 out[key] = {"name": name, "desc": clean(v.get("description") or ""),
-                            "synonyms": syn, "refs": refs}
+                            "synonyms": syn, "refs": refs,
+                            "sponsor": mv(meta.get("cfr-suspected-state-sponsor"))[:60],
+                            "kind": mv(meta.get("cfr-type-of-incident"))[:80],
+                            "country": mv(meta.get("country"))[:40]}
     if not out:
         raise RuntimeError("; ".join(errors) or "nessun dato Galaxy")
     return out
@@ -500,9 +504,14 @@ run("bulletins", "Bollettini istituzionali", lambda: news_multi([
      "Google News (vulnerabilità)", "it")]), [])
 run("advisories", "Advisory CISA", lambda: news_multi([
     (["https://www.cisa.gov/cybersecurity-advisories/all.xml"], "CISA Advisories", "en")]), [])
+run("news_fin", "Notizie Banking & Insurance", lambda: news_multi([
+    (["https://news.google.com/rss/search?q=banca+OR+banche+OR+assicurazioni+OR+assicurativa+attacco+hacker+OR+ransomware+OR+data+breach&hl=it&gl=IT&ceid=IT:it"],
+     "Google News (banche e assicurazioni)", "it"),
+    (["https://news.google.com/rss/search?q=Italy+bank+OR+insurance+ransomware+OR+cyberattack+OR+breach&hl=en&gl=IT&ceid=IT:en"],
+     "Google News (Italy banking EN)", "en")]), [])
 run("galaxy", "MISP Galaxy", galaxy, {})
 
-for n in ("news_it", "news_en", "bulletins", "advisories"):
+for n in ("news_it", "news_en", "bulletins", "advisories", "news_fin"):
     data[n].sort(key=lambda x: x.get("date", ""), reverse=True)
 
 run("cves", "CVE (KEV + bollettini + NVD)", lambda: build_cves(data, old), [])
@@ -530,6 +539,34 @@ for key in ("it_victims", "world_victims"):
     wanted |= {v["group"] for v in data.get(key, []) if v.get("group")}
 run("mitre", "MITRE ATT&CK", lambda: mitre(wanted, aidx), {})
 
+GROUP_ATTR = {
+    "noname05716": ("Hacktivismo", "Filo-russo, attacchi DDoS"),
+    "killnet": ("Hacktivismo", "Filo-russo, attacchi DDoS"),
+    "anonymoussudan": ("Hacktivismo", "Attacchi DDoS"),
+    "handala": ("Statale", "Persona hacktivista collegata all'Iran, secondo fonti pubbliche"),
+    "cyberav3ngers": ("Statale", "Collegato ai CGRI iraniani, secondo fonti pubbliche"),
+    "mosesstaff": ("Statale", "Collegato all'Iran, secondo fonti pubbliche"),
+    "lazarus": ("Statale", "Corea del Nord"),
+}
+
+def group_attrs():
+    names = {g["name"] for g in (data.get("groups") or {}).values()}
+    for key in ("it_victims", "world_victims"):
+        names |= {v["group"] for v in data.get(key, []) if v.get("group")}
+    out = {}
+    for n in names:
+        k = norm(n)
+        t, note = GROUP_ATTR.get(k, ("", ""))
+        g = gmap.get(k) or {}
+        sp = g.get("sponsor", "")
+        if not t and sp:
+            t, note = "Statale", "Stato sponsor indicato da MISP Galaxy: " + sp
+        if not t:
+            t, note = "Cybercrime", "Classificazione di default: estorsione a scopo di lucro (non verificata)"
+        out[n.lower()] = {"type": t, "note": note, "kind": g.get("kind", ""), "country": g.get("country", "")}
+    return out
+
+run("gattr", "Attributi gang", group_attrs, {})
 run("geo", "Sedi vittime IT (OSM)", lambda: build_geo(data["it_victims"], old.get("geo") or {}), {})
 
 if old.get("world"):
