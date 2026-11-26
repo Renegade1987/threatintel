@@ -15,7 +15,7 @@ main{padding:20px}.card{background:var(--p);border:1px solid var(--l);border-rad
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:16px}
 .kpi .v{font-size:28px;font-weight:700}.kpi .l{color:var(--m);font-size:12px}
 table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--l);vertical-align:top}
-th{color:var(--m);font-size:12px}tr:hover td{background:var(--p2)}tr[data-v]{cursor:pointer}
+th{color:var(--m);font-size:12px}tr:hover td{background:var(--p2)}tr[data-v],tr[data-cve]{cursor:pointer}
 a{color:var(--a);text-decoration:none}.lnk{color:var(--a);cursor:pointer;text-decoration:underline dotted}
 .tag{background:var(--p2);border:1px solid var(--l);border-radius:4px;padding:1px 6px;font-size:11px;margin:1px;display:inline-block}
 .bad{color:var(--r)}.ok{color:var(--g)}.tools{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
@@ -47,6 +47,8 @@ h3{margin:0 0 10px;color:var(--m);font-size:13px;text-transform:uppercase}
 .itp .r{padding:3px 4px;cursor:pointer;border-radius:4px;display:flex;justify-content:space-between}
 .itp .r:hover{background:var(--p2)}
 .inp{flex:1;min-width:220px;background:var(--bg);color:var(--tx);border:1px solid var(--l);border-radius:6px;padding:8px 10px}
+.cv{display:inline-block;min-width:34px;text-align:center;border-radius:4px;padding:1px 6px;font-weight:700;font-size:12px;color:#fff;background:#4b5563}
+.cv.c{background:#c0392b}.cv.h{background:#d2691e}.cv.m{background:#b8860b}
 </style></head><body>
 <header><h1>🛡 ThreatIntel Hub</h1>
 <input id="q" placeholder="Ricerca globale: CVE, IP, azienda, gang, malware, notizie...">
@@ -61,7 +63,7 @@ const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&
 const safeUrl=u=>/^https?:\/\//i.test(u||"")?esc(u):"";
 const fd=s=>{const d=new Date(s);return isNaN(d)?esc(s||""):d.toLocaleString("it-IT",{dateStyle:"short",timeStyle:"short"})};
 let D=null,tab="ov";
-const TABS=[["ov","Overview"],["it","🇮🇹 Landscape Italia"],["kev","Vulnerabilità KEV"],["c2","Botnet C2"],["news","Notizie"],["ioc","IOC"],["bull","🏛 Bollettini istituzionali"],["feeds","Feed"],["search","Ricerca"]];
+const TABS=[["ov","Overview"],["it","🇮🇹 Landscape Italia"],["kev","CVE critiche"],["c2","Botnet C2"],["news","Notizie"],["ioc","IOC"],["bull","🏛 Bollettini istituzionali"],["feeds","Feed"],["search","Ricerca"]];
 $("#nav").innerHTML=TABS.map(t=>`<button data-t="${t[0]}">${t[1]}</button>`).join("");
 $("#nav").onclick=e=>{if(e.target.dataset.t){tab=e.target.dataset.t;render()}};
 $("#q").oninput=()=>{if($("#q").value.trim().length>1){tab="search"}render()};
@@ -72,19 +74,23 @@ const gl=g=>g?`<a class="lnk" data-g="${esc(g)}">${esc(g)}</a>`:"";
 const vrow=(v,cols)=>`<tr data-v="${v.id}">${cols.map(c=>`<td>${c}</td>`).join("")}</tr>`;
 const nk=s=>(s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
 const hq=v=>{const g=(D.geo||{})[nk(v.victim)];return g&&g.ok?(g.city||""):""};
+const cvb=c=>{const s=c.cvss;if(s==null)return '<span class="cv">n/d</span>';return `<span class="cv ${s>=9?"c":s>=7?"h":s>=4?"m":""}">${Number(s).toFixed(1)}</span>`};
+const epp=c=>c.epss==null?"n/d":(c.epss*100).toFixed(1)+"%";
 
 async function load(){
   try{
     const r=await fetch("data.json?_="+Date.now(),{cache:"no-store"});
     if(!r.ok)throw new Error("HTTP "+r.status);
     D=await r.json();
-    ["it_victims","world_victims","kev","c2","news_it","news_en","bulletins","status","world","italy"].forEach(k=>{if(!Array.isArray(D[k]))D[k]=[]});
+    ["it_victims","world_victims","kev","c2","news_it","news_en","bulletins","vuln_alerts","cves","status","world","italy"].forEach(k=>{if(!Array.isArray(D[k]))D[k]=[]});
+    if(!D.cves.length)D.cves=D.kev.map(k=>({cve:k.cve,desc:k.name,cvss:null,sev:"",published:"",vendor:k.vendor,product:k.product,ransomware:k.ransomware,added:k.added,kev:true,epss:null,mentions:[],sources:["CISA KEV"]}));
+    D.cves.forEach(c=>{if(!Array.isArray(c.sources))c.sources=[];if(!Array.isArray(c.mentions))c.mentions=[]});
     if(!D.mitre||typeof D.mitre!=="object")D.mitre={};
     if(!D.geo||Array.isArray(D.geo))D.geo={};
     D.it_victims.forEach((v,i)=>v.id="i"+i);D.world_victims.forEach((v,i)=>v.id="w"+i);
     $("#upd").textContent="Dati aggiornati: "+fd(D.generated);
   }catch(e){$("#upd").innerHTML='<span class="bad">data.json non raggiungibile ('+esc(e.message)+')</span>'}
-  if(!$("#modal").classList.contains("show")&&tab!=="bull")render();
+  if(!$("#modal").classList.contains("show")&&tab!=="bull"&&tab!=="kev")render();
 }
 function tbl(h,rows){return `<table><thead><tr>${h.map(x=>`<th>${x}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table>`}
 function newsList(a){return a.map(n=>`<div class="news"><a href="${safeUrl(n.link)||"#"}" target="_blank" rel="noopener noreferrer">${esc(n.title)}</a><br><small>${esc(n.source)} · ${fd(n.date)}</small><br><small>${esc(n.summary)}</small></div>`).join("")||"<i>Nessun dato</i>"}
@@ -100,8 +106,10 @@ const inPoly=(x,y,polys)=>(polys||[]).some(r=>pip(x,y,r));
 function showPlace(title,list){
   openM(`<h2>${esc(title)}</h2><small style="color:var(--m)">${list.length} eventi · sede stimata da OpenStreetMap</small>
   <div style="margin-top:10px">${list.map(v=>`<div class="mini"><a class="lnk" data-v="${v.id}">${esc(v.victim)}</a> <small style="color:var(--m)">· ${esc(v.group)} · ${esc(v.sector)} · ${fd(v.date)}${hq(v)?" · "+esc(hq(v)):""}</small></div>`).join("")}</div>
-  <div class="warn">⚠ La sede è una stima ricavata da OpenStreetMap in base al nome dell'azienda: può essere una filiale o un omonimo, e non coincide necessariamente con la sede amministrativa. Le vittime sono rivendicazioni dei criminali, non verificate.</div>`);
+  <div class="warn">⚠ La sede è una stima ricavata da OpenStreetMap in base al nome dell'azienda: può essere una filiale o un omonimo. Le vittime sono rivendicazioni dei criminali, non verificate.</div>`);
 }
+html
+
 function startMap(){
   stopMap();
   const c=$("#map");if(!c)return;
@@ -274,16 +282,30 @@ function showVictim(id){
   <div class="warn">⚠ Dato OSINT: si tratta di una rivendicazione pubblicata dai criminali sul loro leak site. Non è verificata né confermata dall'organizzazione indicata. La sede è una stima.</div>`);
 }
 
+function showCve(id){
+  const c=D.cves.find(x=>x.cve===id);if(!c)return;
+  openM(`<h2>${esc(c.cve)}</h2><small style="color:var(--m)">${c.sources.map(esc).join(" · ")||"n/d"}</small>
+  <div class="kv" style="margin-top:12px"><div>CVSS</div><div>${cvb(c)} ${esc(c.sev)}</div>
+  <div>EPSS (prob. sfruttamento)</div><div>${epp(c)}</div>
+  <div>Prodotto</div><div>${esc((c.vendor+" "+c.product).trim())||"n/d"}</div>
+  <div>Pubblicata</div><div>${esc(c.published)||"n/d"}</div>
+  <div>Aggiunta a CISA KEV</div><div>${esc(c.added)||"no"}</div>
+  <div>Uso da ransomware</div><div>${c.ransomware==="Known"?'<span class="bad">Sì</span>':esc(c.ransomware)||"n/d"}</div></div>
+  <h4>Descrizione</h4><p>${esc(c.desc)||"<i>Nessuna descrizione disponibile.</i>"}</p>
+  <h4>Segnalazioni collegate</h4>${c.mentions.map(m=>`<div class="mini"><a href="${safeUrl(m.link)||"#"}" target="_blank" rel="noopener noreferrer">${esc(m.title)}</a> <small style="color:var(--m)">· ${esc(m.kind)} · ${esc(m.source)} · ${fd(m.date)}</small></div>`).join("")||"<i>Nessuna segnalazione da bollettini o notizie.</i>"}
+  <h4>Approfondimenti</h4><a href="https://nvd.nist.gov/vuln/detail/${esc(c.cve)}" target="_blank" rel="noopener noreferrer">Scheda NVD ↗</a>`);
+}
+
 document.addEventListener("click",e=>{
   if(e.target.id==="modal"||e.target.id==="mclose")return closeM();
   const g=e.target.closest("[data-g]");if(g)return showGroup(g.dataset.g);
   const v=e.target.closest("[data-v]");if(v)return showVictim(v.dataset.v);
+  const cv=e.target.closest("[data-cve]");if(cv&&!e.target.closest("a"))return showCve(cv.dataset.cve);
 });
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeM()});
-
 /* ---------- VISTE ---------- */
 const V={
- ov(){const k=[["Vittime IT (leak site)",D.it_victims.length,"var(--r)"],["CVE sfruttate (KEV)",D.kev.length,"var(--o)"],["C2 attivi",D.c2.filter(x=>x.status==="online").length,"var(--a)"],["Notizie",D.news_it.length+D.news_en.length,"var(--g)"]];
+ ov(){const k=[["Vittime IT (leak site)",D.it_victims.length,"var(--r)"],["CVE monitorate",D.cves.length,"var(--o)"],["C2 attivi",D.c2.filter(x=>x.status==="online").length,"var(--a)"],["Notizie",D.news_it.length+D.news_en.length,"var(--g)"]];
   const top=topN(D.it_victims.map(v=>v.group),8);
   return `<div class="card mapc"><canvas id="map"></canvas><div class="mapt" id="mapt">Global threat map · OSINT</div>
   <button class="act mapb" id="mback">← Mappa mondiale</button>
@@ -299,8 +321,16 @@ const V={
   <button class="act" id="csv">Esporta CSV</button></div><div id="vt"></div></div>
   <div class="card"><h3>Notizie italiane</h3>${newsList(D.news_it)}</div>
   <div class="card"><h3>Contesto: attacchi recenti nel mondo</h3>${tbl(["Vittima","Gang","Paese","Data"],D.world_victims.slice(0,30).map(v=>vrow(v,[esc(v.victim),gl(v.group),esc(v.country),fd(v.date)])))}</div>`},
- kev(){return `<div class="card"><h3>CISA KEV – vulnerabilità sfruttate attivamente</h3>${tbl(["CVE","Vendor/Prodotto","Nome","Aggiunta","Scadenza","Ransomware"],
-  D.kev.map(v=>`<tr><td><a href="https://nvd.nist.gov/vuln/detail/${esc(v.cve)}" target="_blank" rel="noopener noreferrer">${esc(v.cve)}</a></td><td>${esc(v.vendor)} ${esc(v.product)}</td><td>${esc(v.name)}</td><td>${esc(v.added)}</td><td>${esc(v.due)}</td><td>${v.ransomware==="Known"?'<span class="bad">Sì</span>':esc(v.ransomware)}</td></tr>`))}</div>`},
+ kev(){
+  const q=($("#cq")?$("#cq").value:"").toLowerCase(),sf=$("#cs")?$("#cs").value:"";
+  const srcs=[...new Set(D.cves.flatMap(c=>c.sources))].sort();
+  const f=D.cves.filter(c=>(!sf||c.sources.includes(sf))&&(!q||JSON.stringify(c).toLowerCase().includes(q)));
+  return `<div class="card"><h3>CVE critiche e sfruttate · CISA KEV, bollettini, notizie, NVD (clicca una riga)</h3>
+  <div class="tools"><input id="cq" class="inp" placeholder="Cerca CVE, prodotto, descrizione..." value="${esc(q)}">
+  <select id="cs"><option value="">Tutte le fonti</option>${srcs.map(s=>`<option${s===sf?" selected":""}>${esc(s)}</option>`).join("")}</select>
+  <button class="act" id="ccsv">Esporta CSV</button></div>
+  ${tbl(["CVE","CVSS","EPSS","Prodotto","Descrizione","Fonti","Ransomware"],f.slice(0,300).map(c=>`<tr data-cve="${esc(c.cve)}"><td><b>${esc(c.cve)}</b></td><td>${cvb(c)}</td><td>${epp(c)}</td><td>${esc((c.vendor+" "+c.product).trim())}</td><td>${esc((c.desc||"").slice(0,140))}</td><td>${c.sources.map(s=>`<span class="tag">${esc(s)}</span>`).join("")}</td><td>${c.ransomware==="Known"?'<span class="bad">Sì</span>':""}</td></tr>`))}</div>
+  <div class="card"><h3>Segnalazioni critiche senza CVE (es. vulnerabilità note solo per nome)</h3>${newsList(D.vuln_alerts)}</div>`},
  c2(){return `<div class="card"><h3>Botnet C2 – Feodo Tracker</h3>${tbl(["IP","Porta","Malware","Paese","Stato","Ultimo online"],
   D.c2.map(c=>`<tr><td>${esc(c.ip)}</td><td>${esc(c.port)}</td><td>${esc(c.malware)}</td><td>${esc(c.country)}</td><td>${esc(c.status)}</td><td>${esc(c.last_online)}</td></tr>`))}</div>`},
  news(){return `<div class="card"><h3>Italia</h3>${newsList(D.news_it)}</div><div class="card"><h3>Internazionali</h3>${newsList(D.news_en)}</div>`},
@@ -309,10 +339,10 @@ const V={
   return `<div class="card"><h3>Bollettini e alert di CSIRT Italia e ACN</h3>
   <div class="tools"><input id="bq" class="inp" placeholder="Cerca nei bollettini..." value="${esc(q)}"></div>
   ${newsList(f).replace("Nessun dato","Nessun bollettino disponibile.")}
-  <div class="warn">I bollettini istituzionali sono pubblicati da CSIRT Italia (ACN). Per gli alert completi e le raccomandazioni di mitigazione consulta il sito ufficiale: <a href="https://www.csirt.gov.it/" target="_blank" rel="noopener noreferrer">csirt.gov.it ↗</a></div></div>`},
+  <div class="warn">I bollettini istituzionali sono pubblicati da CSIRT Italia (ACN). Per gli alert completi consulta il sito ufficiale: <a href="https://www.csirt.gov.it/" target="_blank" rel="noopener noreferrer">csirt.gov.it ↗</a></div></div>`},
  ioc(){return `<div class="card"><div class="tools"><button class="act" id="icsv">Esporta CSV</button></div>${tbl(["Tipo","Valore","Contesto"],
   [...D.c2.map(c=>`<tr><td>ip</td><td>${esc(c.ip)}:${esc(c.port)}</td><td>${esc(c.malware)} C2</td></tr>`),
-   ...D.kev.map(v=>`<tr><td>cve</td><td>${esc(v.cve)}</td><td>${esc(v.vendor)} ${esc(v.product)}</td></tr>`)])}</div>`},
+   ...D.cves.map(v=>`<tr><td>cve</td><td>${esc(v.cve)}</td><td>${esc((v.vendor+" "+v.product).trim())}</td></tr>`)])}</div>`},
  feeds(){return `<div class="card"><h3>Stato feed</h3>${tbl(["Feed","Stato","Elementi","Ultimo aggiornamento","Errore"],
   D.status.map(s=>`<tr><td>${esc(s.feed)}</td><td class="${s.ok?"ok":"bad"}">${s.ok?"● OK":"● Errore"}</td><td>${s.count}</td><td>${fd(s.updated)}</td><td>${esc(s.error)}</td></tr>`))}</div>`},
  search(){const q=$("#q").value.trim().toLowerCase();if(q.length<2)return '<div class="card">Digita almeno 2 caratteri nella barra in alto.</div>';
@@ -322,25 +352,29 @@ const V={
   return (sec("Threat actor / gang",gm,a=>a.map(g=>`<div class="mini">${gl(g.name)} <small style="color:var(--m)">${esc((g.desc||"").slice(0,120))}</small></div>`).join(""))
    +sec("Vittime Italia",D.it_victims.filter(m),a=>tbl(["Vittima","Gang","Settore","Data"],a.map(v=>vrow(v,[esc(v.victim),gl(v.group),esc(v.sector),fd(v.date)]))))
    +sec("Vittime mondo",D.world_victims.filter(m),a=>tbl(["Vittima","Gang","Paese"],a.map(v=>vrow(v,[esc(v.victim),gl(v.group),esc(v.country)]))))
-   +sec("CVE KEV",D.kev.filter(m),a=>tbl(["CVE","Prodotto","Nome"],a.map(v=>`<tr><td>${esc(v.cve)}</td><td>${esc(v.vendor)} ${esc(v.product)}</td><td>${esc(v.name)}</td></tr>`)))
+   +sec("CVE",D.cves.filter(m),a=>tbl(["CVE","CVSS","Prodotto","Descrizione"],a.map(c=>`<tr data-cve="${esc(c.cve)}"><td>${esc(c.cve)}</td><td>${cvb(c)}</td><td>${esc((c.vendor+" "+c.product).trim())}</td><td>${esc((c.desc||"").slice(0,120))}</td></tr>`)))
    +sec("C2",D.c2.filter(m),a=>tbl(["IP","Malware","Paese"],a.map(c=>`<tr><td>${esc(c.ip)}</td><td>${esc(c.malware)}</td><td>${esc(c.country)}</td></tr>`)))
    +sec("Bollettini istituzionali",D.bulletins.filter(m),newsList)
+   +sec("Segnalazioni critiche",D.vuln_alerts.filter(m),newsList)
    +sec("Notizie",[...D.news_it,...D.news_en].filter(m),newsList))||'<div class="card">Nessun risultato.</div>'}
 };
 function dl(name,rows){const c=rows.map(r=>r.map(x=>'"'+String(x??"").replace(/"/g,'""')+'"').join(",")).join("\n");
   const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([c],{type:"text/csv"}));a.download=name;a.click()}
+function keepFocus(id,fn){const i=$("#"+id);if(i)i.oninput=()=>{fn();const j=$("#"+id);j.focus();j.setSelectionRange(j.value.length,j.value.length)}}
 function render(){
   stopMap();
   document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("on",b.dataset.t===tab));
   if(!D){$("#main").innerHTML='<div class="card">Nessun dato disponibile.</div>';return}
   $("#main").innerHTML=V[tab]();
   if(tab==="ov")startMap();
-  if(tab==="bull"){const inp=$("#bq");if(inp)inp.oninput=()=>{render();const i=$("#bq");i.focus();i.setSelectionRange(i.value.length,i.value.length)}}
+  if(tab==="bull")keepFocus("bq",render);
+  if(tab==="kev"){keepFocus("cq",render);const s=$("#cs");if(s)s.onchange=render;
+    const b=$("#ccsv");if(b)b.onclick=()=>dl("cve.csv",[["cve","cvss","epss","prodotto","fonti","descrizione"],...D.cves.map(c=>[c.cve,c.cvss,c.epss,(c.vendor+" "+c.product).trim(),c.sources.join("|"),c.desc])])}
   if(tab==="it"){const draw=()=>{const g=$("#gf").value;
     $("#vt").innerHTML=tbl(["Vittima","Gang","Settore","Sede stimata","Scoperta","Sito"],D.it_victims.filter(v=>!g||v.group===g).map(v=>vrow(v,[esc(v.victim),gl(v.group),esc(v.sector),esc(hq(v)),fd(v.date),esc(v.site)])))};
     $("#gf").onchange=draw;draw();
     $("#csv").onclick=()=>dl("vittime_italia.csv",[["vittima","gang","settore","sede_stimata","data","sito"],...D.it_victims.map(v=>[v.victim,v.group,v.sector,hq(v),v.date,v.site])])}
-  if(tab==="ioc")$("#icsv").onclick=()=>dl("ioc.csv",[["tipo","valore","contesto"],...D.c2.map(c=>["ip",c.ip+":"+c.port,c.malware]),...D.kev.map(v=>["cve",v.cve,v.vendor+" "+v.product])]);
+  if(tab==="ioc")$("#icsv").onclick=()=>dl("ioc.csv",[["tipo","valore","contesto"],...D.c2.map(c=>["ip",c.ip+":"+c.port,c.malware]),...D.cves.map(v=>["cve",v.cve,(v.vendor+" "+v.product).trim()])]);
 }
 window.addEventListener("resize",()=>{if(tab==="ov"&&D)startMap()});
 load();setInterval(load,60000);
