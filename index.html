@@ -63,14 +63,15 @@ const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&
 const safeUrl=u=>/^https?:\/\//i.test(u||"")?esc(u):"";
 const fd=s=>{const d=new Date(s);return isNaN(d)?esc(s||""):d.toLocaleString("it-IT",{dateStyle:"short",timeStyle:"short"})};
 let D=null,tab="ov";
-const TABS=[["ov","Overview"],["it","🇮🇹 Landscape Italia"],["kev","CVE critiche"],["c2","Botnet C2"],["news","Notizie"],["ioc","IOC"],["bull","🏛 Bollettini istituzionali"],["feeds","Feed"],["search","Ricerca"]];
+const TABS=[["ov","Overview"],["it","🇮🇹 Landscape Italia"],["kev","CVE critiche"],["c2","Botnet C2"],["news","Notizie"],["ioc","IOC"],["fin","🏦 Banking & Insurance"],["bull","🏛 Bollettini istituzionali"],["feeds","Feed"],["search","Ricerca"]];
 $("#nav").innerHTML=TABS.map(t=>`<button data-t="${t[0]}">${t[1]}</button>`).join("");
 $("#nav").onclick=e=>{if(e.target.dataset.t){tab=e.target.dataset.t;render()}};
 $("#q").oninput=()=>{if($("#q").value.trim().length>1){tab="search"}render()};
 
 const G=()=>(D&&D.groups&&!Array.isArray(D.groups))?D.groups:{};
 const allV=()=>[...D.it_victims,...D.world_victims];
-const gl=g=>g?`<a class="lnk" data-g="${esc(g)}">${esc(g)}</a>`:"";
+const gtag=g=>{const a=(D.gattr||{})[(g||"").toLowerCase()];if(!a||!a.type)return"";const c=a.type==="Statale"?"#f85149":a.type==="Hacktivismo"?"#f0883e":"#8b98a9";return ` <span class="tag" title="${esc(a.note)}" style="border-color:${c};color:${c}">${esc(a.type)}</span>`};
+const gl=g=>g?`<a class="lnk" data-g="${esc(g)}">${esc(g)}</a>${gtag(g)}`:"";
 const vrow=(v,cols)=>`<tr data-v="${v.id}">${cols.map(c=>`<td>${c}</td>`).join("")}</tr>`;
 const nk=s=>(s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
 const hq=v=>{const g=(D.geo||{})[nk(v.victim)];return g&&g.ok?(g.city||""):""};
@@ -82,7 +83,7 @@ async function load(){
     const r=await fetch("data.json?_="+Date.now(),{cache:"no-store"});
     if(!r.ok)throw new Error("HTTP "+r.status);
     D=await r.json();
-    ["it_victims","world_victims","kev","c2","news_it","news_en","bulletins","vuln_alerts","cves","status","world","italy"].forEach(k=>{if(!Array.isArray(D[k]))D[k]=[]});
+    ["it_victims","world_victims","kev","c2","news_it","news_en","bulletins","news_fin","vuln_alerts","cves","status","world","italy"].forEach(k=>{if(!Array.isArray(D[k]))D[k]=[]});
     if(!D.cves.length)D.cves=D.kev.map(k=>({cve:k.cve,desc:k.name,cvss:null,sev:"",published:"",vendor:k.vendor,product:k.product,ransomware:k.ransomware,added:k.added,kev:true,epss:null,mentions:[],sources:["CISA KEV"]}));
     D.cves.forEach(c=>{if(!Array.isArray(c.sources))c.sources=[];if(!Array.isArray(c.mentions))c.mentions=[]});
     if(!D.mitre||typeof D.mitre!=="object")D.mitre={};
@@ -249,7 +250,7 @@ function showGroup(name){
   openM(`<h2>${esc(info.name||name)}</h2><small style="color:var(--m)">Scheda gruppo · dati ransomware.live + MITRE ATT&amp;CK</small><br>
   <a class="big" href="https://www.ransomware.live/group/${encodeURIComponent(name)}" target="_blank" rel="noopener noreferrer">Apri la scheda ufficiale su ransomware.live ↗</a>
   <h4>Profilo (ransomware.live)</h4><p>${esc(info.desc)||"<i>Nessuna descrizione disponibile dalla fonte.</i>"}</p>
-  <div class="kv"><div>Leak site noti</div><div>${info.sites??"n/d"}</div>
+  <div class="kv"><div>Profilo attore</div><div>${gtag(name)||"n/d"} <small style="color:var(--><div>${info.sites??"n/d"}</div>
   ${extra.map(([k,v])=>`<div>${esc(k)}</div><div>${esc(v)}</div>`).join("")}
   <div>Vittime in Italia</div><div><b>${vi.length}</b> (nei dati caricati)</div>
   <div>Vittime recenti mondo</div><div>${vw.length}</div>
