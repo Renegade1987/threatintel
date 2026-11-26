@@ -1,5 +1,5 @@
 import json, os, re, html, gzip, time, urllib.request, urllib.parse, urllib.error, xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from email.utils import parsedate_to_datetime
 
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
@@ -319,6 +319,134 @@ def build_geo(vs, cache, budget=40):
             time.sleep(1.1)
     return geo
 
+# ---------------------------------------------------------------- CVE: KEV + bollettini + NVD + EPSS
+CVE_RE = re.compile(r"CVE-\d{4}-\d{4,7}", re.I)
+KW_RE = re.compile(r"critic|zero[- ]?day|sfruttat|actively exploited|exploited|\brce\b|remote code|vulnerabilit", re.I)
+
+def nvd_parse(c):
+    desc = next((d.get("value", "") for d in c.get("descriptions", []) if d.get("lang") == "en"), "")
+    mt = c.get("metrics") or {}
+    score, sev = None, ""
+    for k in ("cvssMetricV40", "cvssMetricV31", "cvssMetricV30", "cvssMetricV2"):
+        if mt.get(k):
+            m = mt[k][0]
+            cd = m.get("cvssData") or {}
+            score = cd.get("baseScore")
+            sev = cd.get("baseSeverity") or m.get("baseSeverity") or ""
+            break
+    return {"desc": clean(desc), "cvss": score, "sev": sev, "published": (c.get("published") or "")[:10]}
+
+def nvd_critical():
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(days=7)
+    f = "%Y-%m-%dT%H:%M:%S.000"
+    q = urllib.parse.urlencode({"cvssV3Severity": "CRITICAL", "pubStartDate": start.strftime(f),
+                                "pubEndDate": end.strftime(f), "resultsPerPage": 100})
+    d = json.loads(get("https://services.nvd.nist.gov/rest/json/cves/2.0?" + q, timeout=60))
+    out = {}
+    for v in d.get("vulnerabilities", []):
+        c = v.get("cve") or {}
+        if c.get("id"):
+            out[c["id"].upper()] = nvd_parse(c)
+    top = sorted(out.items(), key=lambda kv: kv[1]["cvss"] or 0, reverse=True)[:40]
+    return dict(top)
+
+def nvd_lookup(cid):
+    d = json.loads(get("https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=" + cid, timeout=40))
+    v = d.get("vulnerabilities") or []
+    return nvd_parse(v[0]["cve"]) if v else None
+
+def epss(ids):
+    out, ids = {}, list(ids)
+    for i in range(0, len(ids), 40):
+        try:
+            d = json.loads(get("https://api.first.org/data/v1/epss?cve=" + ",".join(ids[i:i + 40]), timeout=30))
+            for r in d.get("data", []):
+                out[r["cve"].upper()] = (float(r["epss"]), float(r.get("percentile", 0)))
+        except Exception:
+            pass
+    return out
+
+def cve_mentions(groups_):
+    m = {}
+    for kind, items in groups_:
+        for n in items:
+            text = (n.get("title") or "") + " " + (n.get("summary") or "")
+            for c in {x.upper() for x in CVE_RE.findall(text)}:
+                lst = m.setdefault(c, [])
+                if not any(x["link"] == n.get("link") for x in lst):
+                    lst.append({"title": n.get("title", ""), "link": n.get("link", ""),
+                                "source": n.get("source", ""), "kind": kind, "date": n.get("date", "")})
+    return m
+
+def build_cves(data, old):
+    ment = cve_mentions([("Bollettino", data.get("bulletins", [])), ("Notizie", data.get("news_it", [])),
+                         ("Notizie", data.get("news_en", [])), ("Notizie", data.get("advisories", []))])
+    kev_m = {k["cve"].upper(): k for k in data.get("kev", [])}
+    prev = {c["cve"]: c for c in old.get("cves", [])}
+    crit = {}
+    try:
+        crit = nvd_critical()
+    except Exception:
+        pass
+    time.sleep(6.5)
+    ent = {}
+    for i in set(ment) | set(kev_m) | set(crit) | set(prev):
+        p, k, n = prev.get(i, {}), kev_m.get(i), crit.get(i)
+        e = {"cve": i, "desc": p.get("desc", ""), "cvss": p.get("cvss"), "sev": p.get("sev", ""),
+             "published": p.get("published", ""), "vendor": "", "product": "", "ransomware": "",
+             "added": "", "kev": bool(k), "epss": p.get("epss"), "pct": p.get("pct")}
+        if n:
+            e.update(desc=n["desc"], cvss=n["cvss"], sev=n["sev"], published=n["published"])
+        if k:
+            e.update(vendor=k["vendor"], product=k["product"], ransomware=k["ransomware"], added=k["added"])
+            if not e["desc"]:
+                e["desc"] = k["name"]
+        mm = ment.get(i) or p.get("mentions") or []
+        e["mentions"] = mm[:6]
+        s = []
+        if k:
+            s.append("CISA KEV")
+        if any(x["kind"] == "Bollettino" for x in mm):
+            s.append("Bollettino")
+        if any(x["kind"] == "Notizie" for x in mm):
+            s.append("Notizie")
+        if n:
+            s.append("NVD critica")
+        e["sources"] = s
+        if s:
+            ent[i] = e
+    need = sorted([e for e in ent.values() if e["cvss"] is None],
+                  key=lambda e: (0 if "Bollettino" in e["sources"] else 1 if e["mentions"] else 2))
+    for e in need[:12]:
+        try:
+            r = nvd_lookup(e["cve"])
+            if r:
+                e.update(r)
+        except urllib.error.HTTPError as ex:
+            if ex.code in (403, 429):
+                break
+        except Exception:
+            pass
+        time.sleep(6.5)
+    ep = epss(ent.keys())
+    for i, e in ent.items():
+        if i in ep:
+            e["epss"], e["pct"] = round(ep[i][0], 4), round(ep[i][1], 4)
+    return sorted(ent.values(), key=lambda e: ("Bollettino" in e["sources"], e["cvss"] or 0, e["added"] or e["published"]),
+                  reverse=True)[:400]
+
+def vuln_alerts(data):
+    out, seen = [], set()
+    for items in (data.get("bulletins", []), data.get("news_it", []), data.get("news_en", [])):
+        for n in items:
+            t = (n.get("title") or "") + " " + (n.get("summary") or "")
+            if KW_RE.search(n.get("title") or "") and not CVE_RE.search(t) and n.get("link") not in seen:
+                seen.add(n.get("link"))
+                out.append(n)
+    out.sort(key=lambda x: x.get("date", ""), reverse=True)
+    return out[:40]
+
 old = {}
 if os.path.exists(OUT):
     try:
@@ -365,11 +493,18 @@ run("bulletins", "Bollettini istituzionali", lambda: news_multi([
      "CSIRT Italia", "it"),
     (["https://www.acn.gov.it/rss",
       "https://news.google.com/rss/search?q=%22Agenzia+per+la+Cybersecurity+Nazionale%22+OR+%22ACN%22+cybersecurity&hl=it&gl=IT&ceid=IT:it"],
-     "ACN", "it")]), [])
+     "ACN", "it"),
+    (["https://news.google.com/rss/search?q=CSIRT+Italia+vulnerabilit%C3%A0+critica+OR+zero-day+OR+sfruttata&hl=it&gl=IT&ceid=IT:it"],
+     "Google News (vulnerabilità)", "it")]), [])
+run("advisories", "Advisory CISA", lambda: news_multi([
+    (["https://www.cisa.gov/cybersecurity-advisories/all.xml"], "CISA Advisories", "en")]), [])
 run("galaxy", "MISP Galaxy", galaxy, {})
 
-for n in ("news_it", "news_en", "bulletins"):
+for n in ("news_it", "news_en", "bulletins", "advisories"):
     data[n].sort(key=lambda x: x.get("date", ""), reverse=True)
+
+run("cves", "CVE (KEV + bollettini + NVD)", lambda: build_cves(data, old), [])
+run("vuln_alerts", "Segnalazioni critiche senza CVE", lambda: vuln_alerts(data), [])
 
 gal = data.get("galaxy") or {}
 aidx = alias_index(gal)
