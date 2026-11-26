@@ -1,5 +1,3 @@
-python
-
 import json, os, re, html, gzip, time, urllib.request, urllib.parse, urllib.error, xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
 from email.utils import parsedate_to_datetime
