@@ -333,6 +333,17 @@ const V={
  c2(){return `<div class="card"><h3>Botnet C2 – Feodo Tracker</h3>${tbl(["IP","Porta","Malware","Paese","Stato","Ultimo online"],
   D.c2.map(c=>`<tr><td>${esc(c.ip)}</td><td>${esc(c.port)}</td><td>${esc(c.malware)}</td><td>${esc(c.country)}</td><td>${esc(c.status)}</td><td>${esc(c.last_online)}</td></tr>`))}</div>`},
  news(){return `<div class="card"><h3>Italia</h3>${newsList(D.news_it)}</div><div class="card"><h3>Internazionali</h3>${newsList(D.news_en)}</div>`},
+  fin(){
+  const re=/banc|bank|credit|credito|assicur|insur|financ|finanz|fiduc|invest|sgr|leasing|mutu|fondo pensione|poste|borsa|trading|pagament|payment/i;
+  const isF=v=>re.test((v.sector||"")+" "+(v.victim||""));
+  const fi=D.it_victims.filter(isF),fw=D.world_victims.filter(isF);
+  const sect=topN(D.it_victims.map(v=>v.sector),30);
+  return `<div class="card"><h3>Vittime italiane nel settore bancario, assicurativo e finanziario (${fi.length})</h3>
+  ${fi.length?tbl(["Vittima","Gang","Settore","Data"],fi.map(v=>vrow(v,[esc(v.victim),gl(v.group),esc(v.sector),fd(v.date)]))):"<i>Nessuna vittima italiana individuata con il filtro per parole chiave.</i>"}
+  <div class="warn">Filtro per parole chiave su settore e nome della vittima: possibili falsi positivi e casi mancati.</div></div>
+  <div class="card"><h3>Notizie banking e insurance</h3>${newsList(D.news_fin||[])}</div>
+  <div class="card"><h3>Contesto mondiale (${fw.length})</h3>${tbl(["Vittima","Gang","Paese","Data"],fw.slice(0,30).map(v=>vrow(v,[esc(v.victim),gl(v.group),esc(v.country),fd(v.date)])))}</div>
+  <div class="card"><h3>Settori presenti nei dati italiani</h3>${sect.map(s=>`<span class="tag">${esc(s[0])} · ${s[1]}</span>`).join("")||"<i>nessuno</i>"}</div>`},
  bull(){const q=($("#bq")?$("#bq").value:"").toLowerCase();
   const f=D.bulletins.filter(b=>!q||((b.title||"")+" "+(b.summary||"")+" "+(b.source||"")).toLowerCase().includes(q));
   return `<div class="card"><h3>Bollettini e alert di CSIRT Italia e ACN</h3>
